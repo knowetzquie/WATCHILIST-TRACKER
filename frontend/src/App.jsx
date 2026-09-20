@@ -253,13 +253,17 @@ export default function App() {
             <div id="top-five">
               <TopFive
                 items={items}
-                onAssign={(id, rank) =>
-                  handleUpdate(id, { favorite_rank: rank })
-                }
-                onRemove={(id) => handleUpdate(id, { favorite_rank: null })}
-                onUpdateNote={(id, note) =>
-                  handleUpdate(id, { favorite_note: note })
-                }
+                mediaType="movie"
+                title="5 Favorite Films"
+                onOpenDetails={setDetailItem}
+              />
+            </div>
+
+            <div id="top-five-tv">
+              <TopFive
+                items={items}
+                mediaType="tv"
+                title="5 Favorite TV Shows"
                 onOpenDetails={setDetailItem}
               />
             </div>

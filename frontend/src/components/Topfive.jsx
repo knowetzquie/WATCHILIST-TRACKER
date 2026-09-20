@@ -1,15 +1,17 @@
 const RANKS = [1, 2, 3, 4, 5];
 
-export default function TopFive({ items, onOpenDetails }) {
+export default function TopFive({ items, onOpenDetails, mediaType = "movie", title }) {
   const byRank = {};
   for (const item of items) {
+    const itemType = item.media_type === "tv" ? "tv" : "movie";
+    if (itemType !== mediaType) continue;
     if (item.favorite_rank) byRank[item.favorite_rank] = item;
   }
 
   return (
     <section className="top-five">
       <div className="top-five__header">
-        <h2>5 Favorite Films</h2>
+        <h2>{title || (mediaType === "tv" ? "5 Favorite TV Shows" : "5 Favorite Films")}</h2>
       </div>
 
       <div className="top-five__shelf">
@@ -36,7 +38,7 @@ export default function TopFive({ items, onOpenDetails }) {
                         />
                       ) : (
                         <div className="top-five__poster top-five__poster--empty">
-                          🎬
+                          {mediaType === "tv" ? "📺" : "🎬"}
                         </div>
                       )}
                     </button>

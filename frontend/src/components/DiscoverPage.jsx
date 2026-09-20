@@ -209,6 +209,7 @@ export default function DiscoverPage({ items, onAdd }) {
           Object.values(feeds)
             .flat()
             .map((item) => item.year)
+
             .filter(Boolean),
         ),
       ].sort((a, b) => b - a),
@@ -230,11 +231,19 @@ export default function DiscoverPage({ items, onAdd }) {
         trendingWindow,
         nextPage,
       );
+
+      if (!Array.isArray(more) || more.length === 0) {
+        return;
+      }
+
       setFeeds((current) => ({
         ...current,
-        [section]: [...current[section], ...more],
+        [section]: more,
       }));
+
       setPages((current) => ({ ...current, [section]: nextPage }));
+    } catch (err) {
+      setError(`Failed to load additional titles: ${err.message}`);
     } finally {
       setLoadingMore("");
     }

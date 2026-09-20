@@ -15,6 +15,7 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 import sqlite3
 import os
+import math  
 import json
 import requests
 from datetime import datetime
@@ -175,6 +176,9 @@ def validate_payload(data, partial=False):
             return None, f"Status must be one of: {', '.join(sorted(VALID_STATUSES))}."
         cleaned["status"] = status
 
+        if status == "completed" and "watched_at" not in data:
+            cleaned["watched_at"] = datetime.now().strftime("%Y-%m-%d")
+
     if "rating" in data or not partial:
         try:
             rating = int(data.get("rating", 0))
@@ -305,13 +309,21 @@ def update_item(item_id):
     merged = row_to_dict(existing)
     merged.update(cleaned)
 
-    # If this item is being assigned a rank (1-5), that rank can only belong
-    # to one item at a time — bump whoever currently holds it back to unranked.
+   # If this item is being assigned a rank (1-5), that rank can only belong
+    # to one item of the same media type at a time — a movie and a TV show
+    # can both hold rank #1 simultaneously, but two movies can't.
     if "favorite_rank" in cleaned and cleaned["favorite_rank"] is not None:
-        db.execute(
-            "UPDATE items SET favorite_rank = NULL WHERE favorite_rank = ? AND id != ?",
-            (cleaned["favorite_rank"], item_id),
-        )
+        is_tv = merged.get("media_type") == "tv"
+        if is_tv:
+            db.execute(
+                "UPDATE items SET favorite_rank = NULL WHERE favorite_rank = ? AND id != ? AND media_type = 'tv'",
+                (cleaned["favorite_rank"], item_id),
+            )
+        else:
+            db.execute(
+                "UPDATE items SET favorite_rank = NULL WHERE favorite_rank = ? AND id != ? AND (media_type IS NULL OR media_type != 'tv')",
+                (cleaned["favorite_rank"], item_id),
+            )
 
     db.execute(
         """UPDATE items SET
@@ -438,52 +450,81 @@ def search_titles():
 
     return jsonify(results)
 
-
 @app.route("/api/discover", methods=["GET"])
 def discover():
     section = (request.args.get("section") or "trending").strip().lower()
     if section not in ("recommendations", "trending", "upcoming"):
         return jsonify({"error": "Unknown discovery section."}), 400
+
     if not TMDB_API_KEY:
         return jsonify({"error": "TMDB_API_KEY is not set on the server."}), 500
 
-    endpoint = {
-        "recommendations": "/discover/movie",
-        "trending": "/trending/movie/week",
-        "upcoming": "/movie/upcoming",
-    }[section]
-    params = {"api_key": TMDB_API_KEY, "language": "en-US", "page": 1}
-    if section == "recommendations":
-        genre_map = get_genre_map()
-        genre_ids = {name.lower(): genre_id for genre_id, name in genre_map.items()}
-        params["sort_by"] = "vote_average.desc"
-        params["vote_count.gte"] = 200
-        params["with_genres"] = ",".join(
-            str(genre_ids.get(name.strip().lower(), ""))
-            for name in (request.args.get("genres") or "").split(",")
-            if name.strip().lower() in genre_ids
-        )
+    media_filter = (request.args.get("media_type") or "all").strip().lower()
+    if media_filter not in ("all", "movie", "tv"):
+        media_filter = "all"
+
     try:
-        resp = requests.get(f"{TMDB_BASE}{endpoint}", params=params, timeout=5)
-        resp.raise_for_status()
-        data = resp.json()
-    except requests.RequestException:
-        return jsonify({"error": "Could not reach the movie database."}), 502
+        frontend_page = int(request.args.get("page", 1))
+        if frontend_page < 1:
+            frontend_page = 1
+    except (TypeError, ValueError):
+        frontend_page = 1
+
+    tmdb_page = math.ceil(frontend_page / 2)
+    is_second_half = (frontend_page % 2 == 0)
+
+    window = (request.args.get("window") or "week").strip().lower()
+    if window not in ("day", "week"):
+        window = "week"
 
     genre_map = get_genre_map()
+
+    def fetch_kind(kind):
+        endpoint = {
+            "recommendations": f"/discover/{kind}",
+            "trending": f"/trending/{kind}/{window}",
+            "upcoming": "/movie/upcoming" if kind == "movie" else "/tv/on_the_air",
+        }[section]
+        params = {"api_key": TMDB_API_KEY, "language": "en-US", "page": tmdb_page}
+        try:
+            resp = requests.get(f"{TMDB_BASE}{endpoint}", params=params, timeout=5)
+            resp.raise_for_status()
+            return resp.json().get("results", [])
+        except requests.RequestException:
+            return []
+
+    if media_filter == "all":
+        movie_results = fetch_kind("movie")
+        tv_results = fetch_kind("tv")
+        # Interleave movie/tv instead of dumping all movies first, all tv second
+        tagged = []
+        for i in range(max(len(movie_results), len(tv_results))):
+            if i < len(movie_results):
+                tagged.append((movie_results[i], "movie"))
+            if i < len(tv_results):
+                tagged.append((tv_results[i], "tv"))
+        raw_results = tagged
+    else:
+        raw_results = [(r, media_filter) for r in fetch_kind(media_filter)]
+
+    start_idx = 10 if is_second_half else 0
+    sliced = raw_results[start_idx : start_idx + 10]
+
     results = []
-    for item in data.get("results", [])[:12]:
-        release_date = item.get("release_date") or ""
-        genre_names = [genre_map[gid] for gid in item.get("genre_ids", []) if gid in genre_map]
+    for item, kind in sliced:
+        release_date = item.get("release_date") or item.get("first_air_date") or ""
+        genre_ids = item.get("genre_ids", [])
+        genre_names = [genre_map[g] for g in genre_ids if g in genre_map]
         results.append({
             "tmdb_id": item.get("id"),
-            "media_type": "movie",
+            "media_type": kind,
             "title": item.get("title") or item.get("name") or "Untitled",
-            "year": release_date[:4] or None,
-            "genre": ", ".join(genre_names[:2]),
+            "year": release_date[:4] if release_date else None,
             "poster_url": f"{TMDB_IMAGE_BASE}{item['poster_path']}" if item.get("poster_path") else "",
-            "reason": "Matches your favorite genres" if section == "recommendations" else "",
+            "vote_average": item.get("vote_average", 0),
+            "genre": ", ".join(genre_names),
         })
+
     return jsonify(results)
 
 @app.route("/api/title-details/<int:tmdb_id>", methods=["GET"])
