@@ -12,6 +12,7 @@ import ProfilePage from "./components/ProfilePage.jsx";
 import DiscoverPage from "./components/DiscoverPage.jsx";
 import CollectionsPage from "./components/CollectionsPage.jsx";
 import DiaryPage from "./components/DiaryPage.jsx";
+import GenreDropdown from "./components/GenreDropdown.jsx";
 
 export default function App() {
   const [items, setItems] = useState([]);
@@ -289,20 +290,11 @@ export default function App() {
                   onChange={(e) => setListQuery(e.target.value)}
                 />
               </label>
-              <label className="list-toolbar__genre">
-                <span className="sr-only">Filter by genre</span>
-                <select
-                  value={listGenre}
-                  onChange={(e) => setListGenre(e.target.value)}
-                >
-                  <option value="all">All genres</option>
-                  {listGenres.map((genre) => (
-                    <option key={genre} value={genre}>
-                      {genre}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <GenreDropdown
+                value={listGenre}
+                onChange={setListGenre}
+                genres={listGenres}
+              />
             </div>
 
             {loading ? (

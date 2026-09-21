@@ -25,9 +25,14 @@ export default function DiaryPage({ items, onOpenDetails }) {
   return (
     <div className="feature-page">
       <header className="feature-page__intro">
-        <p className="eyebrow">Diary</p>
-        <h1>Your watch log</h1>
-        <p>
+        <span className="feature-page__eyebrow">
+          <span className="feature-page__eyebrow-dot" />
+          Diary
+        </span>
+        <h1 className="feature-page__headline">
+          Your <span>watch log</span>
+        </h1>
+        <p className="feature-page__lede">
           A chronological record of what you watched, with rewatches kept
           visible without changing completion totals.
         </p>

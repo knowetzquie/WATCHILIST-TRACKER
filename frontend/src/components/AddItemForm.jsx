@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import StarRating from "./StarRating.jsx";
 import { api } from "../api.js";
+import SelectDropdown from "./SelectDropdown.jsx";
 
 const EMPTY = {
   title: "",
@@ -296,23 +297,25 @@ export default function AddItemForm({ onAdd }) {
       )}
 
       <div className="index-card__row index-card__row--meta">
-        <label className="field">
+        <div className="field">
           <span>Status</span>
-          <select
+          <SelectDropdown
+            ariaLabel="Status"
             value={form.status}
-            onChange={(e) =>
+            onChange={(status) =>
               setForm({
                 ...form,
-                status: e.target.value,
-                rating: e.target.value === "completed" ? form.rating : 0,
+                status,
+                rating: status === "completed" ? form.rating : 0,
               })
             }
-          >
-            <option value="plan to watch">Plan to Watch</option>
-            <option value="watching">Watching</option>
-            <option value="completed">Completed</option>
-          </select>
-        </label>
+            options={[
+              { value: "plan to watch", label: "Plan to Watch" },
+              { value: "watching", label: "Watching" },
+              { value: "completed", label: "Completed" },
+            ]}
+          />
+        </div>
 
         <div className="field">
           <span>Rating</span>

@@ -87,4 +87,42 @@ export const api = {
       body: JSON.stringify(changes),
     }).then(handle);
   },
+
+  getTvSeasons(tmdbId) {
+    return fetch(`${BASE_URL}/tv/${tmdbId}/seasons`).then(handle);
+  },
+
+  getSeasonEpisodes(tmdbId, seasonNumber) {
+    return fetch(`${BASE_URL}/tv/${tmdbId}/season/${seasonNumber}`).then(
+      handle,
+    );
+  },
+
+  getEpisodeLogs(itemId) {
+    return fetch(`${BASE_URL}/items/${itemId}/episodes`).then(handle);
+  },
+
+  getEpisodeReviews() {
+    return fetch(`${BASE_URL}/episode-reviews`).then(handle);
+  },
+
+  logEpisode(itemId, seasonNumber, episodeNumber, data) {
+    return fetch(
+      `${BASE_URL}/items/${itemId}/episodes/${seasonNumber}/${episodeNumber}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      },
+    ).then(handle);
+  },
+
+  deleteEpisodeLog(itemId, seasonNumber, episodeNumber) {
+    return fetch(
+      `${BASE_URL}/items/${itemId}/episodes/${seasonNumber}/${episodeNumber}`,
+      {
+        method: "DELETE",
+      },
+    ).then(handle);
+  },
 };

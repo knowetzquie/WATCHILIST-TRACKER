@@ -54,11 +54,15 @@ frontend/
       CollectionsPage.jsx
       DiaryPage.jsx
       DiscoverPage.jsx
+      EpisodeTrackerModal.jsx
       FilterTabs.jsx
+      GenreDropdown.jsx
       LogEntryModal.jsx
       PosterGrid.jsx
       ProfilePage.jsx
+      RankDropdown.jsx
       ReviewsPage.jsx
+      SelectDropdown.jsx
       StarRating.jsx
       StatsPage.jsx
       TitleDetailModal.jsx
@@ -79,700 +83,779 @@ README.md
 <files>
 This section contains the contents of the repository's files.
 
-<file path="backend/app.py">
-"""
-Watchlist Tracker — backend API
+<file path="frontend/src/components/EpisodeTrackerModal.jsx">
+import { useEffect, useState } from "react";
+import { api } from "../api.js";
 
-A small Flask app backed by SQLite. Stores movies/anime with a title,
-genre, status, rating, and an optional poster image. Data is persisted
-to watchlist.db in this same folder, so it survives restarts.
+function EpisodeRow({ item, seasonNumber, episode, log, onSaved }) {
+  const [expanded, setExpanded] = useState(false);
+  const [rating, setRating] = useState(log?.rating || 0);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [review, setReview] = useState(log?.review || "");
+  const [watchedOn, setWatchedOn] = useState(
+    log?.watched_at || new Date().toISOString().slice(0, 10),
+  );
+  const [saving, setSaving] = useState(false);
 
-Title search/autocomplete (with posters) is powered by TMDB
-(themoviedb.org). Put your API key in a `.env` file in this folder:
-    TMDB_API_KEY=your_key_here
-"""
+  const watched = !!log;
 
-from flask import Flask, jsonify, request, g
-from flask_cors import CORS
-from dotenv import load_dotenv
-import sqlite3
-import os
-import math  
-import json
-import requests
-from datetime import datetime
-from collections import Counter
-
-load_dotenv()
-
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "watchlist.db")
-VALID_STATUSES = {"watching", "plan to watch", "completed"}
-
-TMDB_API_KEY = os.environ.get("TMDB_API_KEY", "")
-TMDB_BASE = "https://api.themoviedb.org/3"
-TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w200"
-
-app = Flask(__name__)
-CORS(app)
-
-
-def get_db():
-    if "db" not in g:
-        g.db = sqlite3.connect(DB_PATH)
-        g.db.row_factory = sqlite3.Row
-        g.db.execute("PRAGMA foreign_keys = ON")
-    return g.db
-
-
-@app.teardown_appcontext
-def close_db(exception=None):
-    db = g.pop("db", None)
-    if db is not None:
-        db.close()
-
-
-def init_db():
-    """Create the items table if it doesn't exist yet, and add new columns
-    to older databases that were created before poster_url existed."""
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS items (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            genre TEXT NOT NULL DEFAULT '',
-            status TEXT NOT NULL DEFAULT 'plan to watch',
-            rating INTEGER NOT NULL DEFAULT 0,
-            poster_url TEXT NOT NULL DEFAULT '',
-            review TEXT NOT NULL DEFAULT '',
-            favorite_rank INTEGER DEFAULT NULL,
-            favorite_note TEXT NOT NULL DEFAULT '',
-            tmdb_id INTEGER DEFAULT NULL,
-            media_type TEXT DEFAULT NULL,
-            watched_at TEXT DEFAULT NULL,
-            is_rewatch INTEGER NOT NULL DEFAULT 0,
-            liked INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )
-        """
-    )
-    # Migration for databases created before poster_url/review/favorite_rank existed.
-    existing_columns = {row[1] for row in conn.execute("PRAGMA table_info(items)")}
-    if "poster_url" not in existing_columns:
-        conn.execute("ALTER TABLE items ADD COLUMN poster_url TEXT NOT NULL DEFAULT ''")
-    if "review" not in existing_columns:
-        conn.execute("ALTER TABLE items ADD COLUMN review TEXT NOT NULL DEFAULT ''")
-    if "favorite_rank" not in existing_columns:
-        conn.execute("ALTER TABLE items ADD COLUMN favorite_rank INTEGER DEFAULT NULL")
-    if "favorite_note" not in existing_columns:
-        conn.execute("ALTER TABLE items ADD COLUMN favorite_note TEXT NOT NULL DEFAULT ''")
-    if "tmdb_id" not in existing_columns:
-        conn.execute("ALTER TABLE items ADD COLUMN tmdb_id INTEGER DEFAULT NULL")
-    if "media_type" not in existing_columns:
-        conn.execute("ALTER TABLE items ADD COLUMN media_type TEXT DEFAULT NULL")
-    if "watched_at" not in existing_columns:
-        conn.execute("ALTER TABLE items ADD COLUMN watched_at TEXT DEFAULT NULL")
-    if "is_rewatch" not in existing_columns:
-        conn.execute("ALTER TABLE items ADD COLUMN is_rewatch INTEGER NOT NULL DEFAULT 0")
-    if "liked" not in existing_columns:
-        conn.execute("ALTER TABLE items ADD COLUMN liked INTEGER NOT NULL DEFAULT 0")
-
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS profile (
-            id INTEGER PRIMARY KEY CHECK (id = 1),
-            name TEXT NOT NULL DEFAULT 'Movie Lover',
-            bio TEXT NOT NULL DEFAULT '',
-            avatar TEXT NOT NULL DEFAULT '🎬',
-            pinned_favorites TEXT NOT NULL DEFAULT '[]'
-        )
-        """
-    )
-    profile_columns = {row[1] for row in conn.execute("PRAGMA table_info(profile)")}
-    if "pinned_favorites" not in profile_columns:
-        conn.execute("ALTER TABLE profile ADD COLUMN pinned_favorites TEXT NOT NULL DEFAULT '[]'")
-    conn.execute(
-        "INSERT OR IGNORE INTO profile (id, name, bio, avatar, pinned_favorites) VALUES (1, 'Movie Lover', '', '🎬', '[]')"
-    )
-    conn.commit()
-
-def row_to_dict(row):
-    return {
-        "id": row["id"],
-        "title": row["title"],
-        "genre": row["genre"],
-        "status": row["status"],
-        "rating": row["rating"],
-        "poster_url": row["poster_url"] if "poster_url" in row.keys() else "",
-        "review": row["review"] if "review" in row.keys() else "",
-        "favorite_rank": row["favorite_rank"] if "favorite_rank" in row.keys() else None,
-        "favorite_note": row["favorite_note"] if "favorite_note" in row.keys() else "",
-        "tmdb_id": row["tmdb_id"] if "tmdb_id" in row.keys() else None,
-        "media_type": row["media_type"] if "media_type" in row.keys() else None,
-        "watched_at": row["watched_at"] if "watched_at" in row.keys() else None,
-        "is_rewatch": bool(row["is_rewatch"]) if "is_rewatch" in row.keys() else False,
-        "liked": bool(row["liked"]) if "liked" in row.keys() else False,
-        "created_at": row["created_at"],
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const saved = await api.logEpisode(
+        item.id,
+        seasonNumber,
+        episode.episode_number,
+        { rating, review: review.trim(), watched_at: watchedOn },
+      );
+      onSaved(episode.episode_number, saved);
+      setExpanded(false);
+    } finally {
+      setSaving(false);
     }
+  }
 
+  async function handleUnmark() {
+    await api.deleteEpisodeLog(item.id, seasonNumber, episode.episode_number);
+    onSaved(episode.episode_number, null);
+  }
 
-def normalize_pinned_favorites(value):
-    if value in (None, ""):
-        return []
-    if isinstance(value, str):
-        try:
-            parsed = json.loads(value)
-        except json.JSONDecodeError:
-            return []
-    else:
-        parsed = value
+  return (
+    <div className={`episode-row ${watched ? "episode-row--watched" : ""}`}>
+      <button
+        type="button"
+        className="episode-row__toggle"
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <span className="episode-row__check">
+          {watched ? "✓" : episode.episode_number}
+        </span>
+        <span className="episode-row__info">
+          <span className="episode-row__title">
+            E{episode.episode_number} · {episode.name}
+          </span>
+          {watched && (
+            <span className="episode-row__meta">
+              {"★".repeat(log.rating)}
+              {log.rating > 0 ? ` (${log.rating}/5)` : ""}
+              {log.watched_at ? ` · Watched ${log.watched_at}` : ""}
+            </span>
+          )}
+        </span>
+      </button>
 
-    if not isinstance(parsed, list):
-        return []
+      {expanded && (
+        <div className="episode-row__editor">
+          <label className="episode-row__field">
+            <span>Watched on</span>
+            <input
+              type="date"
+              value={watchedOn}
+              onChange={(e) => setWatchedOn(e.target.value)}
+              max={new Date().toISOString().slice(0, 10)}
+            />
+          </label>
 
-    cleaned = []
-    for item in parsed:
-        try:
-            cleaned_value = int(item)
-        except (TypeError, ValueError):
-            continue
-        if cleaned_value not in cleaned:
-            cleaned.append(cleaned_value)
-    return cleaned
+          <div className="episode-row__stars">
+            {[1, 2, 3, 4, 5].map((n) => (
+              <button
+                key={n}
+                type="button"
+                onMouseEnter={() => setHoverRating(n)}
+                onMouseLeave={() => setHoverRating(0)}
+                onClick={() => setRating(n === rating ? 0 : n)}
+              >
+                {(hoverRating || rating) >= n ? "★" : "☆"}
+              </button>
+            ))}
+          </div>
 
-def validate_payload(data, partial=False):
-    cleaned = {}
+          <textarea
+            placeholder="Thoughts on this episode…"
+            value={review}
+            onChange={(e) => setReview(e.target.value)}
+            rows={3}
+          />
 
-    if "title" in data or not partial:
-        title = (data.get("title") or "").strip()
-        if not title:
-            return None, "Title is required."
-        cleaned["title"] = title
+          <div className="episode-row__actions">
+            {watched && (
+              <button
+                type="button"
+                className="btn btn--ghost btn--tiny"
+                onClick={handleUnmark}
+              >
+                Unmark watched
+              </button>
+            )}
+            <button
+              type="button"
+              className="btn btn--primary btn--tiny"
+              onClick={handleSave}
+              disabled={saving}
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
-    if "genre" in data or not partial:
-        cleaned["genre"] = (data.get("genre") or "").strip()
+export default function EpisodeTrackerModal({ item, onClose }) {
+  const [seasons, setSeasons] = useState([]);
+  const [seasonNumber, setSeasonNumber] = useState(1);
+  const [episodes, setEpisodes] = useState([]);
+  const [logs, setLogs] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-    if "status" in data or not partial:
-        status = (data.get("status") or "plan to watch").strip().lower()
-        if status not in VALID_STATUSES:
-            return None, f"Status must be one of: {', '.join(sorted(VALID_STATUSES))}."
-        cleaned["status"] = status
-
-    if "rating" in data or not partial:
-        try:
-            rating = int(data.get("rating", 0))
-        except (TypeError, ValueError):
-            return None, "Rating must be a whole number between 0 and 5."
-        if rating < 0 or rating > 5:
-            return None, "Rating must be between 0 and 5."
-        cleaned["rating"] = rating
-
-    if "poster_url" in data:
-        cleaned["poster_url"] = (data.get("poster_url") or "").strip()
-    elif not partial:
-        cleaned["poster_url"] = ""
-
-    if "review" in data:
-        cleaned["review"] = (data.get("review") or "").strip()
-    elif not partial:
-        cleaned["review"] = ""
-
-    if "favorite_rank" in data:
-        raw = data.get("favorite_rank")
-        if raw in (None, "", 0):
-            cleaned["favorite_rank"] = None
-        else:
-            try:
-                rank = int(raw)
-            except (TypeError, ValueError):
-                return None, "favorite_rank must be a whole number between 1 and 5."
-            if rank < 1 or rank > 5:
-                return None, "favorite_rank must be between 1 and 5."
-            cleaned["favorite_rank"] = rank
-
-    if "favorite_note" in data:
-        cleaned["favorite_note"] = (data.get("favorite_note") or "").strip()[:120]
-
-    if "tmdb_id" in data:
-        raw_id = data.get("tmdb_id")
-        cleaned["tmdb_id"] = int(raw_id) if raw_id not in (None, "") else None
-
-    if "media_type" in data:
-        mt = (data.get("media_type") or "").strip().lower()
-        cleaned["media_type"] = mt if mt in ("movie", "tv") else None
-
-    if "watched_at" in data:
-        raw_date = (data.get("watched_at") or "").strip()
-        if not raw_date:
-            cleaned["watched_at"] = None
-        else:
-            try:
-                datetime.strptime(raw_date, "%Y-%m-%d")
-            except ValueError:
-                return None, "watched_at must be a date in YYYY-MM-DD format."
-            cleaned["watched_at"] = raw_date
-
-    if "is_rewatch" in data:
-        cleaned["is_rewatch"] = 1 if data.get("is_rewatch") else 0
-
-    if "liked" in data:
-        cleaned["liked"] = 1 if data.get("liked") else 0
-
-    return cleaned, None
-
-
-@app.route("/api/health", methods=["GET"])
-def health():
-    return jsonify({"status": "ok"})
-
-
-@app.route("/api/items", methods=["GET"])
-def list_items():
-    db = get_db()
-    status_filter = request.args.get("status")
-    if status_filter and status_filter.lower() != "all":
-        rows = db.execute(
-            "SELECT * FROM items WHERE status = ? ORDER BY created_at DESC, id DESC",
-            (status_filter.lower(),),
-        ).fetchall()
-    else:
-        rows = db.execute(
-            "SELECT * FROM items ORDER BY created_at DESC, id DESC"
-        ).fetchall()
-    return jsonify([row_to_dict(r) for r in rows])
-
-
-@app.route("/api/items", methods=["POST"])
-def create_item():
-    data = request.get_json(silent=True) or {}
-    cleaned, error = validate_payload(data, partial=False)
-    if error:
-        return jsonify({"error": error}), 400
-
-    db = get_db()
-    cursor = db.execute(
-        "INSERT INTO items (title, genre, status, rating, poster_url, review, favorite_rank, favorite_note, tmdb_id, media_type, watched_at, is_rewatch, liked) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (
-            cleaned["title"],
-            cleaned["genre"],
-            cleaned["status"],
-            cleaned["rating"],
-            cleaned["poster_url"],
-            cleaned["review"],
-            cleaned.get("favorite_rank"),
-            cleaned.get("favorite_note", ""),
-            cleaned.get("tmdb_id"),
-            cleaned.get("media_type"),
-            cleaned.get("watched_at"),
-            cleaned.get("is_rewatch", 0),
-            cleaned.get("liked", 0),
-        ),
-    )
-    db.commit()
-    new_row = db.execute("SELECT * FROM items WHERE id = ?", (cursor.lastrowid,)).fetchone()
-    return jsonify(row_to_dict(new_row)), 201
-
-
-@app.route("/api/items/<int:item_id>", methods=["PUT", "PATCH"])
-def update_item(item_id):
-    db = get_db()
-    existing = db.execute("SELECT * FROM items WHERE id = ?", (item_id,)).fetchone()
-    if existing is None:
-        return jsonify({"error": "Item not found."}), 404
-
-    data = request.get_json(silent=True) or {}
-    cleaned, error = validate_payload(data, partial=True)
-    if error:
-        return jsonify({"error": error}), 400
-
-    merged = row_to_dict(existing)
-    merged.update(cleaned)
-
-    # If this item is being assigned a rank (1-5), that rank can only belong
-    # to one item at a time — bump whoever currently holds it back to unranked.
-    if "favorite_rank" in cleaned and cleaned["favorite_rank"] is not None:
-        db.execute(
-            "UPDATE items SET favorite_rank = NULL WHERE favorite_rank = ? AND id != ?",
-            (cleaned["favorite_rank"], item_id),
-        )
-
-    db.execute(
-        """UPDATE items SET
-            title = ?, genre = ?, status = ?, rating = ?, poster_url = ?,
-            review = ?, favorite_rank = ?, favorite_note = ?, tmdb_id = ?,
-            media_type = ?, watched_at = ?, is_rewatch = ?, liked = ?
-        WHERE id = ?""",
-        (
-            merged["title"],
-            merged["genre"],
-            merged["status"],
-            merged["rating"],
-            merged["poster_url"],
-            merged["review"],
-            merged["favorite_rank"],
-            merged["favorite_note"],
-            merged["tmdb_id"],
-            merged["media_type"],
-            merged["watched_at"],
-            1 if merged["is_rewatch"] else 0,
-            1 if merged["liked"] else 0,
-            item_id,
-        ),
-    )
-    db.commit()
-    updated_row = db.execute("SELECT * FROM items WHERE id = ?", (item_id,)).fetchone()
-    return jsonify(row_to_dict(updated_row))
-
-
-@app.route("/api/items/<int:item_id>", methods=["DELETE"])
-def delete_item(item_id):
-    db = get_db()
-    existing = db.execute("SELECT * FROM items WHERE id = ?", (item_id,)).fetchone()
-    if existing is None:
-        return jsonify({"error": "Item not found."}), 404
-
-    db.execute("DELETE FROM items WHERE id = ?", (item_id,))
-    db.commit()
-    return jsonify({"deleted": item_id})
-
-
-_genre_cache = {}
-_details_cache = {}
-
-def get_genre_map():
-    if _genre_cache:
-        return _genre_cache
-    if not TMDB_API_KEY:
-        return {}
-    try:
-        for kind in ("movie", "tv"):
-            resp = requests.get(
-                f"{TMDB_BASE}/genre/{kind}/list",
-                params={"api_key": TMDB_API_KEY},
-                timeout=5,
-            )
-            resp.raise_for_status()
-            for genre in resp.json().get("genres", []):
-                _genre_cache[genre["id"]] = genre["name"]
-    except requests.RequestException:
-        pass
-    return _genre_cache
-
-
-@app.route("/api/search-titles", methods=["GET"])
-def search_titles():
-    query = (request.args.get("q") or "").strip()
-    if not query:
-        return jsonify([])
-
-    if not TMDB_API_KEY:
-        return jsonify({"error": "TMDB_API_KEY is not set on the server."}), 500
-
-    try:
-        resp = requests.get(
-            f"{TMDB_BASE}/search/multi",
-            params={"api_key": TMDB_API_KEY, "query": query, "include_adult": "false"},
-            timeout=5,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-    except requests.RequestException:
-        return jsonify({"error": "Could not reach the movie database."}), 502
-
-    genre_map = get_genre_map()
-    results = []
-    for item in data.get("results", [])[:8]:
-        media_type = item.get("media_type")
-        if media_type not in ("movie", "tv"):
-            continue
-
-        title = item.get("title") or item.get("name") or ""
-        if not title:
-            continue
-
-        date = item.get("release_date") or item.get("first_air_date") or ""
-        year = date[:4] if date else None
-
-        genre_ids = item.get("genre_ids", [])
-        genre_names = [genre_map[gid] for gid in genre_ids if gid in genre_map]
-        is_animation = "Animation" in genre_names
-        is_japanese = item.get("original_language") == "ja"
-
-        if media_type == "tv" and is_animation and is_japanese:
-            kind_label = "Anime"
-        elif media_type == "tv":
-            kind_label = "TV Series"
-        else:
-            kind_label = "Movie"
-
-        poster_path = item.get("poster_path")
-
-        results.append(
-            {
-                "tmdb_id": item.get("id"),
-                "media_type": media_type,
-                "title": title,
-                "year": year,
-                "kind": kind_label,
-                "genre": ", ".join(genre_names[:2]),
-                "poster_url": f"{TMDB_IMAGE_BASE}{poster_path}" if poster_path else "",
-            }
-        )
-
-    return jsonify(results)
-
-
-@app.route("/api/discover", methods=["GET"])
-def discover():
-    section = (request.args.get("section") or "trending").strip().lower()
-    if section not in ("recommendations", "trending", "upcoming"):
-        return jsonify({"error": "Unknown discovery section."}), 400
-
-    if not TMDB_API_KEY:
-        return jsonify({"error": "TMDB_API_KEY is not set on the server."}), 500
-
-    # Parse requested page from frontend (each frontend page = 10 titles)
-    try:
-        frontend_page = int(request.args.get("page", 1))
-        if frontend_page < 1:
-            frontend_page = 1
-    except (TypeError, ValueError):
-        frontend_page = 1
-
-    # Map frontend page (10 items) to TMDB page (20 items)
-    tmdb_page = math.ceil(frontend_page / 2)
-    is_second_half = (frontend_page % 2 == 0)
-
-    window = (request.args.get("window") or "week").strip().lower()
-    if window not in ("day", "week"):
-        window = "week"
-
-    endpoint = {
-        "recommendations": "/discover/movie",
-        "trending": f"/trending/movie/{window}",
-        "upcoming": "/movie/upcoming",
-    }[section]
-
-    params = {
-        "api_key": TMDB_API_KEY,
-        "language": "en-US",
-        "page": tmdb_page
+  useEffect(() => {
+    let cancelled = false;
+    if (!item.tmdb_id) {
+      setError(
+        "This show isn't linked to TMDB, so episode lists can't be fetched.",
+      );
+      setLoading(false);
+      return;
     }
+    Promise.all([api.getTvSeasons(item.tmdb_id), api.getEpisodeLogs(item.id)])
+      .then(([seasonData, logRows]) => {
+        if (cancelled) return;
+        setSeasons(seasonData.seasons || []);
+        const logMap = {};
+        logRows.forEach((l) => {
+          logMap[`${l.season_number}-${l.episode_number}`] = l;
+        });
+        setLogs(logMap);
+      })
+      .catch((err) => !cancelled && setError(err.message))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [item.tmdb_id, item.id]);
 
-    try:
-        resp = requests.get(f"{TMDB_BASE}{endpoint}", params=params, timeout=5)
-        resp.raise_for_status()
-        data = resp.json()
-    except requests.RequestException:
-        return jsonify({"error": "Could not reach the movie database."}), 502
+  useEffect(() => {
+    if (!item.tmdb_id) return;
+    let cancelled = false;
+    setLoading(true);
+    api
+      .getSeasonEpisodes(item.tmdb_id, seasonNumber)
+      .then((data) => {
+        if (!cancelled) setEpisodes(data.episodes || []);
+      })
+      .catch((err) => !cancelled && setError(err.message))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [item.tmdb_id, seasonNumber]);
 
-    raw_results = data.get("results", [])
+  function handleSaved(episodeNumber, log) {
+    setLogs((current) => {
+      const key = `${seasonNumber}-${episodeNumber}`;
+      const next = { ...current };
+      if (log) next[key] = log;
+      else delete next[key];
+      return next;
+    });
+  }
 
-    # Slice exactly 10 items (0-9 for odd pages, 10-19 for even pages)
-    start_idx = 10 if is_second_half else 0
-    sliced_results = raw_results[start_idx : start_idx + 10]
+  const watchedCount = episodes.filter(
+    (e) => logs[`${seasonNumber}-${e.episode_number}`],
+  ).length;
+  const seasonRatings = episodes
+    .map((e) => logs[`${seasonNumber}-${e.episode_number}`]?.rating)
+    .filter((r) => r > 0);
+  const seasonAvg = seasonRatings.length
+    ? (seasonRatings.reduce((a, b) => a + b, 0) / seasonRatings.length).toFixed(
+        1,
+      )
+    : null;
 
-    results = []
-    for item in sliced_results:
-        release_date = item.get("release_date") or item.get("first_air_date") or ""
-        results.append({
-            "tmdb_id": item.get("id"),
-            "media_type": item.get("media_type") or "movie",
-            "title": item.get("title") or item.get("name") or "Untitled",
-            "year": release_date[:4] if release_date else None,
-            "poster_url": f"{TMDB_IMAGE_BASE}{item['poster_path']}" if item.get("poster_path") else "",
-            "vote_average": item.get("vote_average", 0),
-        })
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        className="modal modal--episodes"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button className="modal__close" onClick={onClose} aria-label="Close">
+          ✕
+        </button>
+        <h2 className="episode-tracker__title">{item.title} — Episodes</h2>
 
-    return jsonify(results)
+        {error && <p className="banner banner--error">{error}</p>}
 
-@app.route("/api/title-details/<int:tmdb_id>", methods=["GET"])
-def title_details(tmdb_id):
-    media_type = (request.args.get("media_type") or "movie").strip().lower()
-    if media_type not in ("movie", "tv"):
-        media_type = "movie"
+        {seasons.length > 0 && (
+          <div className="episode-tracker__season-select">
+            <label>
+              <span>Season</span>
+              <select
+                value={seasonNumber}
+                onChange={(e) => setSeasonNumber(Number(e.target.value))}
+              >
+                {seasons.map((s) => (
+                  <option key={s.season_number} value={s.season_number}>
+                    {s.name} ({s.episode_count} episodes)
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span className="episode-tracker__summary">
+              {watchedCount}/{episodes.length} watched
+              {seasonAvg ? ` · avg ${seasonAvg}★` : ""}
+            </span>
+          </div>
+        )}
 
-    cache_key = f"{media_type}:{tmdb_id}"
-    if cache_key in _details_cache:
-        return jsonify(_details_cache[cache_key])
+        {loading ? (
+          <p className="stats-empty">Loading episodes…</p>
+        ) : (
+          <div className="episode-tracker__list">
+            {episodes.map((ep) => (
+              <EpisodeRow
+                key={ep.episode_number}
+                item={item}
+                seasonNumber={seasonNumber}
+                episode={ep}
+                log={logs[`${seasonNumber}-${ep.episode_number}`]}
+                onSaved={handleSaved}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+</file>
 
-    if not TMDB_API_KEY:
-        return jsonify({"error": "TMDB_API_KEY is not set on the server."}), 500
+<file path="frontend/src/components/GenreDropdown.jsx">
+import { useEffect, useId, useRef, useState } from "react";
 
-    try:
-        resp = requests.get(
-            f"{TMDB_BASE}/{media_type}/{tmdb_id}",
-            params={"api_key": TMDB_API_KEY, "append_to_response": "credits"},
-            timeout=5,
-        )
-        if resp.status_code == 404:
-            return jsonify({"error": "Title not found."}), 404
-        resp.raise_for_status()
-        data = resp.json()
-    except requests.RequestException:
-        return jsonify({"error": "Could not reach the movie database."}), 502
+export default function GenreDropdown({ value, onChange, genres }) {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const rootRef = useRef(null);
+  const listRef = useRef(null);
+  const listId = useId();
 
-    title = data.get("title") or data.get("name") or ""
-    date = data.get("release_date") or data.get("first_air_date") or ""
-    year = date[:4] if date else None
-    genres = [g["name"] for g in data.get("genres", [])]
-    poster_path = data.get("poster_path")
+  const options = [
+    { value: "all", label: "All genres" },
+    ...genres.map((g) => ({ value: g, label: g })),
+  ];
+  const selectedIndex = Math.max(
+    0,
+    options.findIndex((o) => o.value === value),
+  );
+  const selected = options[selectedIndex];
 
-    credits = data.get("credits", {})
+  // close when clicking / tapping outside
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => {
+      if (!rootRef.current?.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, [open]);
 
-    def person_photo(person):
-        path = person.get("profile_path")
-        return f"{TMDB_IMAGE_BASE}{path}" if path else None
-
-    cast = [
-        {"name": c["name"], "photo": person_photo(c)}
-        for c in credits.get("cast", [])[:6]
-    ]
-
-    if media_type == "movie":
-        directors = [
-            {"name": c["name"], "photo": person_photo(c)}
-            for c in credits.get("crew", [])
-            if c.get("job") == "Director"
-        ]
-    else:
-        directors = [
-            {"name": c.get("name"), "photo": person_photo(c)}
-            for c in data.get("created_by", [])
-        ]
-
-    result = {
-        "title": title,
-        "year": year,
-        "genres": genres,
-        "overview": data.get("overview") or "",
-        "poster_url": f"{TMDB_IMAGE_BASE}{poster_path}" if poster_path else "",
-        "directors": directors,
-        "cast": cast,
-        "runtime": data.get("runtime"),
-        "episode_count": data.get("number_of_episodes"),
-        "studios": [
-            company.get("name")
-            for company in data.get("production_companies", [])
-            if company.get("name")
-        ],
-        "vote_average": data.get("vote_average"),
+  // keep highlighted option visible
+  useEffect(() => {
+    if (open) {
+      listRef.current?.children[active]?.scrollIntoView({ block: "nearest" });
     }
-    _details_cache[cache_key] = result
-    return jsonify(result)
+  }, [open, active]);
 
-@app.route("/api/profile", methods=["GET"])
-def get_profile():
-    db = get_db()
-    row = db.execute("SELECT * FROM profile WHERE id = 1").fetchone()
-    return jsonify({
-        "name": row["name"],
-        "bio": row["bio"],
-        "avatar": row["avatar"],
-        "pinned_favorites": normalize_pinned_favorites(row["pinned_favorites"]),
-    })
+  const openMenu = () => {
+    setActive(selectedIndex);
+    setOpen(true);
+  };
 
+  const choose = (i) => {
+    onChange(options[i].value);
+    setOpen(false);
+  };
 
-@app.route("/api/profile", methods=["PATCH"])
-def update_profile():
-    data = request.get_json(silent=True) or {}
-    db = get_db()
-    row = db.execute("SELECT * FROM profile WHERE id = 1").fetchone()
-
-    name = (data.get("name") if "name" in data else row["name"]) or "Movie Lover"
-    bio = (data.get("bio") if "bio" in data else row["bio"]) or ""
-    avatar = (data.get("avatar") if "avatar" in data else row["avatar"]) or "🎬"
-    pinned_favorites = normalize_pinned_favorites(
-        data.get("pinned_favorites") if "pinned_favorites" in data else row["pinned_favorites"]
-    )
-
-    payload = {
-        "name": name.strip()[:60],
-        "bio": bio.strip()[:200],
-        "avatar": avatar.strip()[:3_000_000],
-        "pinned_favorites": pinned_favorites,
+  const onKeyDown = (e) => {
+    if (!open) {
+      if (["ArrowDown", "ArrowUp", "Enter", " "].includes(e.key)) {
+        e.preventDefault();
+        openMenu();
+      }
+      return;
     }
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setActive((i) => Math.min(i + 1, options.length - 1));
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setActive((i) => Math.max(i - 1, 0));
+        break;
+      case "Home":
+        e.preventDefault();
+        setActive(0);
+        break;
+      case "End":
+        e.preventDefault();
+        setActive(options.length - 1);
+        break;
+      case "Enter":
+      case " ":
+        e.preventDefault();
+        choose(active);
+        break;
+      case "Escape":
+      case "Tab":
+        setOpen(false);
+        break;
+      default:
+    }
+  };
 
-    db.execute(
-        "UPDATE profile SET name = ?, bio = ?, avatar = ?, pinned_favorites = ? WHERE id = 1",
-        (payload["name"], payload["bio"], payload["avatar"], json.dumps(payload["pinned_favorites"])),
-    )
-    db.commit()
-    return jsonify(payload)
+  return (
+    <div
+      className={`genre-dd ${open ? "genre-dd--open" : ""} ${
+        value !== "all" ? "genre-dd--filtered" : ""
+      }`}
+      ref={rootRef}
+    >
+      <button
+        type="button"
+        className="genre-dd__trigger"
+        onClick={() => (open ? setOpen(false) : openMenu())}
+        onKeyDown={onKeyDown}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-label="Filter by genre"
+      >
+        <span className="genre-dd__value">{selected.label}</span>
+        <svg
+          className="genre-dd__chevron"
+          width="14"
+          height="14"
+          viewBox="0 0 20 20"
+          aria-hidden="true"
+        >
+          <path
+            d="M5 7.5l5 5 5-5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
 
+      <ul
+        id={listId}
+        className="genre-dd__menu"
+        role="listbox"
+        ref={listRef}
+        aria-label="Genres"
+      >
+        {options.map((o, i) => (
+          <li
+            key={o.value}
+            role="option"
+            aria-selected={o.value === value}
+            className={`genre-dd__option ${
+              i === active ? "genre-dd__option--active" : ""
+            } ${o.value === value ? "genre-dd__option--selected" : ""}`}
+            onMouseEnter={() => setActive(i)}
+            onClick={() => choose(i)}
+          >
+            <span>{o.label}</span>
+            {o.value === value && (
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 20 20"
+                aria-hidden="true"
+              >
+                <path
+                  d="M4 10.5l4 4 8-9"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+</file>
 
-@app.route("/api/profile/talent", methods=["GET"])
-def profile_talent():
-    if not TMDB_API_KEY:
-        return jsonify({"directors": [], "actors": []})
+<file path="frontend/src/components/RankDropdown.jsx">
+import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
-    db = get_db()
-    rows = db.execute(
-        "SELECT id, title, tmdb_id, media_type FROM items WHERE tmdb_id IS NOT NULL ORDER BY created_at DESC"
-    ).fetchall()
+const OPTIONS = [
+  { value: null, label: "☆ No rank" },
+  { value: 1, label: "★ #1" },
+  { value: 2, label: "★ #2" },
+  { value: 3, label: "★ #3" },
+  { value: 4, label: "★ #4" },
+  { value: 5, label: "★ #5" },
+];
 
-    if not rows:
-        return jsonify({"directors": [], "actors": []})
+export default function RankDropdown({ value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const [pos, setPos] = useState(null);
+  const triggerRef = useRef(null);
+  const menuRef = useRef(null);
+  const listId = useId();
 
-    director_map = {}
-    actor_map = {}
+  const current = value || null;
+  const selectedIndex = Math.max(
+    0,
+    OPTIONS.findIndex((o) => o.value === current),
+  );
 
-    for r in rows:
-        media_type = r["media_type"] or "movie"
-        try:
-            resp = requests.get(
-                f"{TMDB_BASE}/{media_type}/{r['tmdb_id']}",
-                params={"api_key": TMDB_API_KEY, "append_to_response": "credits"},
-                timeout=5,
-            )
-            if resp.status_code != 200:
-                continue
-            data = resp.json()
-        except requests.RequestException:
-            continue
+  const openMenu = () => {
+    const r = triggerRef.current.getBoundingClientRect();
+    const menuHeight = 250;
+    const flipUp =
+      window.innerHeight - r.bottom < menuHeight && r.top > menuHeight;
+    setPos(
+      flipUp
+        ? { bottom: window.innerHeight - r.top + 6, left: r.left, width: r.width, up: true }
+        : { top: r.bottom + 6, left: r.left, width: r.width, up: false },
+    );
+    setActive(selectedIndex);
+    setOpen(true);
+  };
 
-        title = data.get("title") or data.get("name") or r["title"]
-        credits = data.get("credits", {})
+  const close = () => setOpen(false);
 
-        for person in credits.get("crew", []) or []:
-            if person.get("job") != "Director" or not person.get("name"):
-                continue
-            name = person["name"]
-            entry = director_map.setdefault(name, {"name": name, "photo": None, "count": 0, "titles": []})
-            entry["count"] += 1
-            entry["titles"] = list(dict.fromkeys(entry["titles"] + [title]))
-            if not entry["photo"] and person.get("profile_path"):
-                entry["photo"] = f"{TMDB_IMAGE_BASE}{person['profile_path']}"
+  const choose = (i) => {
+    onChange(OPTIONS[i].value);
+    close();
+    triggerRef.current?.focus();
+  };
 
-        for person in credits.get("cast", []) or []:
-            if not person.get("name"):
-                continue
-            name = person["name"]
-            entry = actor_map.setdefault(name, {"name": name, "photo": None, "count": 0, "titles": []})
-            entry["count"] += 1
-            entry["titles"] = list(dict.fromkeys(entry["titles"] + [title]))
-            if not entry["photo"] and person.get("profile_path"):
-                entry["photo"] = f"{TMDB_IMAGE_BASE}{person['profile_path']}"
+  // close on outside click, scroll, resize
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => {
+      if (
+        !triggerRef.current?.contains(e.target) &&
+        !menuRef.current?.contains(e.target)
+      ) {
+        close();
+      }
+    };
+    document.addEventListener("pointerdown", onDown);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [open]);
 
-    def to_response(mapping):
-        values = []
-        for value in mapping.values():
-            if value["count"] < 2:
-                continue
-            values.append({
-                "name": value["name"],
-                "photo": value["photo"],
-                "count": value["count"],
-                "titles": value["titles"],
-            })
-        values.sort(key=lambda item: (-item["count"], item["name"].lower()))
-        return values[:5]
+  const onKeyDown = (e) => {
+    if (!open) {
+      if (["ArrowDown", "ArrowUp", "Enter", " "].includes(e.key)) {
+        e.preventDefault();
+        openMenu();
+      }
+      return;
+    }
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setActive((i) => Math.min(i + 1, OPTIONS.length - 1));
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setActive((i) => Math.max(i - 1, 0));
+        break;
+      case "Enter":
+      case " ":
+        e.preventDefault();
+        choose(active);
+        break;
+      case "Escape":
+      case "Tab":
+        close();
+        break;
+      default:
+    }
+  };
 
-    return jsonify({"directors": to_response(director_map), "actors": to_response(actor_map)})
+  const triggerLabel = current ? `★ #${current}` : "☆ Top 5";
 
-if __name__ == "__main__":
-    init_db()
-    app.run(debug=True, host="0.0.0.0", port=5000)
+  return (
+    <>
+      <button
+        type="button"
+        ref={triggerRef}
+        className={`favorite-select rank-dd__trigger ${
+          current ? "favorite-select--active" : ""
+        }`}
+        onClick={() => (open ? close() : openMenu())}
+        onKeyDown={onKeyDown}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={listId}
+        title="Top 5 of All Time"
+      >
+        {triggerLabel}
+      </button>
+
+      {open &&
+        pos &&
+        createPortal(
+          <ul
+            id={listId}
+            ref={menuRef}
+            role="listbox"
+            className={`rank-dd__menu ${pos.up ? "rank-dd__menu--up" : ""}`}
+            style={{
+              position: "fixed",
+              top: pos.top,
+              bottom: pos.bottom,
+              left: pos.left,
+              minWidth: Math.max(pos.width, 120),
+            }}
+          >
+            {OPTIONS.map((o, i) => (
+              <li
+                key={String(o.value)}
+                role="option"
+                aria-selected={o.value === current}
+                className={`rank-dd__option ${
+                  i === active ? "rank-dd__option--active" : ""
+                } ${o.value === current ? "rank-dd__option--selected" : ""}`}
+                onMouseEnter={() => setActive(i)}
+                onClick={() => choose(i)}
+              >
+                <span>{o.label}</span>
+                {o.value === current && (
+                  <svg width="14" height="14" viewBox="0 0 20 20" aria-hidden="true">
+                    <path
+                      d="M4 10.5l4 4 8-9"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                )}
+              </li>
+            ))}
+          </ul>,
+          document.body,
+        )}
+    </>
+  );
+}
+</file>
+
+<file path="frontend/src/components/SelectDropdown.jsx">
+import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+
+/**
+ * Generic custom select.
+ * options: [{ value: "plan to watch", label: "Plan to Watch" }, ...]
+ */
+export default function SelectDropdown({
+  value,
+  onChange,
+  options,
+  ariaLabel,
+  className = "",
+}) {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const [pos, setPos] = useState(null);
+  const triggerRef = useRef(null);
+  const menuRef = useRef(null);
+  const listId = useId();
+
+  const selectedIndex = Math.max(
+    0,
+    options.findIndex((o) => o.value === value),
+  );
+  const selected = options[selectedIndex];
+
+  const close = () => setOpen(false);
+
+  const openMenu = () => {
+    const r = triggerRef.current.getBoundingClientRect();
+    const menuHeight = options.length * 38 + 20;
+    const flipUp =
+      window.innerHeight - r.bottom < menuHeight && r.top > menuHeight;
+    setPos(
+      flipUp
+        ? {
+            bottom: window.innerHeight - r.top + 6,
+            left: r.left,
+            width: r.width,
+            up: true,
+          }
+        : { top: r.bottom + 6, left: r.left, width: r.width, up: false },
+    );
+    setActive(selectedIndex);
+    setOpen(true);
+  };
+
+  const choose = (i) => {
+    onChange(options[i].value);
+    close();
+    triggerRef.current?.focus();
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => {
+      if (
+        !triggerRef.current?.contains(e.target) &&
+        !menuRef.current?.contains(e.target)
+      ) {
+        close();
+      }
+    };
+    document.addEventListener("pointerdown", onDown);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [open]);
+
+  const onKeyDown = (e) => {
+    if (!open) {
+      if (["ArrowDown", "ArrowUp", "Enter", " "].includes(e.key)) {
+        e.preventDefault();
+        openMenu();
+      }
+      return;
+    }
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setActive((i) => Math.min(i + 1, options.length - 1));
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setActive((i) => Math.max(i - 1, 0));
+        break;
+      case "Enter":
+      case " ":
+        e.preventDefault();
+        choose(active);
+        break;
+      case "Escape":
+      case "Tab":
+        close();
+        break;
+      default:
+    }
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        ref={triggerRef}
+        className={`select-dd__trigger ${open ? "select-dd__trigger--open" : ""} ${className}`}
+        onClick={() => (open ? close() : openMenu())}
+        onKeyDown={onKeyDown}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-label={ariaLabel}
+      >
+        <span className="select-dd__value">{selected?.label}</span>
+        <svg
+          className="select-dd__chevron"
+          width="14"
+          height="14"
+          viewBox="0 0 20 20"
+          aria-hidden="true"
+        >
+          <path
+            d="M5 7.5l5 5 5-5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+
+      {open &&
+        pos &&
+        createPortal(
+          <ul
+            id={listId}
+            ref={menuRef}
+            role="listbox"
+            className={`rank-dd__menu ${pos.up ? "rank-dd__menu--up" : ""}`}
+            style={{
+              position: "fixed",
+              top: pos.top,
+              bottom: pos.bottom,
+              left: pos.left,
+              minWidth: Math.max(pos.width, 140),
+            }}
+          >
+            {options.map((o, i) => (
+              <li
+                key={String(o.value)}
+                role="option"
+                aria-selected={o.value === value}
+                className={`rank-dd__option ${
+                  i === active ? "rank-dd__option--active" : ""
+                } ${o.value === value ? "rank-dd__option--selected" : ""}`}
+                onMouseEnter={() => setActive(i)}
+                onClick={() => choose(i)}
+              >
+                <span>{o.label}</span>
+                {o.value === value && (
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 20 20"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M4 10.5l4 4 8-9"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                )}
+              </li>
+            ))}
+          </ul>,
+          document.body,
+        )}
+    </>
+  );
+}
 </file>
 
 <file path="backend/requirements.txt">
@@ -844,6 +927,7 @@ self.addEventListener("fetch", (event) => {
 import { useEffect, useRef, useState } from "react";
 import StarRating from "./StarRating.jsx";
 import { api } from "../api.js";
+import SelectDropdown from "./SelectDropdown.jsx";
 
 const EMPTY = {
   title: "",
@@ -1139,23 +1223,25 @@ export default function AddItemForm({ onAdd }) {
       )}
 
       <div className="index-card__row index-card__row--meta">
-        <label className="field">
+        <div className="field">
           <span>Status</span>
-          <select
+          <SelectDropdown
+            ariaLabel="Status"
             value={form.status}
-            onChange={(e) =>
+            onChange={(status) =>
               setForm({
                 ...form,
-                status: e.target.value,
-                rating: e.target.value === "completed" ? form.rating : 0,
+                status,
+                rating: status === "completed" ? form.rating : 0,
               })
             }
-          >
-            <option value="plan to watch">Plan to Watch</option>
-            <option value="watching">Watching</option>
-            <option value="completed">Completed</option>
-          </select>
-        </label>
+            options={[
+              { value: "plan to watch", label: "Plan to Watch" },
+              { value: "watching", label: "Watching" },
+              { value: "completed", label: "Completed" },
+            ]}
+          />
+        </div>
 
         <div className="field">
           <span>Rating</span>
@@ -1262,9 +1348,14 @@ export default function CollectionsPage({ items }) {
   return (
     <div className="feature-page">
       <header className="feature-page__intro">
-        <p className="eyebrow">Collections</p>
-        <h1>Build your own shelves</h1>
-        <p>
+        <span className="feature-page__eyebrow">
+          <span className="feature-page__eyebrow-dot" />
+          Collections
+        </span>
+        <h1 className="feature-page__headline">
+          Build your <span>own shelves</span>
+        </h1>
+        <p className="feature-page__lede">
           Group titles by mood, theme, director, or the challenge you are
           chasing.
         </p>
@@ -1387,9 +1478,14 @@ export default function DiaryPage({ items, onOpenDetails }) {
   return (
     <div className="feature-page">
       <header className="feature-page__intro">
-        <p className="eyebrow">Diary</p>
-        <h1>Your watch log</h1>
-        <p>
+        <span className="feature-page__eyebrow">
+          <span className="feature-page__eyebrow-dot" />
+          Diary
+        </span>
+        <h1 className="feature-page__headline">
+          Your <span>watch log</span>
+        </h1>
+        <p className="feature-page__lede">
           A chronological record of what you watched, with rewatches kept
           visible without changing completion totals.
         </p>
@@ -1448,390 +1544,6 @@ export default function DiaryPage({ items, onOpenDetails }) {
             );
           })}
         </div>
-      )}
-    </div>
-  );
-}
-</file>
-
-<file path="frontend/src/components/DiscoverPage.jsx">
-import { useEffect, useMemo, useState } from "react";
-import { api } from "../api.js";
-
-function LoadingRail({ title }) {
-  return (
-    <section
-      className="feature-section discovery-loading-rail"
-      aria-label={`Loading ${title}`}
-    >
-      <div className="feature-section__heading">
-        <h2>{title}</h2>
-        <span className="discovery-loading-label">Loading</span>
-      </div>
-      <div className="discovery-grid discovery-grid--scroll">
-        {[1, 2, 3, 4, 5, 6].map((placeholder) => (
-          <div className="discovery-skeleton" key={placeholder} />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function Feed({
-  title,
-  items,
-  onAdd,
-  watchlistKeys,
-  headingExtra,
-  compact = false,
-  onLoadMore,
-  loadingMore,
-}) {
-  if (!items.length)
-    return <p className="empty-state">Nothing to show right now.</p>;
-  return (
-    <section className="feature-section">
-      <div className="feature-section__heading">
-        <div className="discovery-heading-title">
-          <h2>{title}</h2>
-          {headingExtra}
-        </div>
-        <span>{items.length} titles</span>
-      </div>
-      <div className="discovery-grid discovery-grid--scroll">
-        {items.map((item) => {
-          const key = `${item.media_type}-${item.tmdb_id}`;
-          const added = watchlistKeys.has(key);
-          return (
-            <article
-              className={`discovery-card ${compact ? "discovery-card--compact" : ""}`}
-              key={key}
-            >
-              <div className="discovery-card__poster-wrap">
-                {item.poster_url ? (
-                  <img
-                    src={item.poster_url}
-                    alt=""
-                    className="discovery-card__poster-img"
-                  />
-                ) : (
-                  <div className="discovery-card__poster discovery-card__poster--empty">
-                    🎬
-                  </div>
-                )}
-                <button
-                  type="button"
-                  className={`discovery-card__add ${added ? "discovery-card__add--added" : ""}`}
-                  disabled={added}
-                  onClick={() => onAdd(item)}
-                  aria-label={
-                    added ? "Already in watchlist" : "Add to watchlist"
-                  }
-                  title={added ? "Already in watchlist" : "Add to watchlist"}
-                >
-                  {added ? "✓" : "+"}
-                </button>
-                {item.vote_average > 0 && (
-                  <span
-                    className="discovery-card__score"
-                    title="TMDB community rating"
-                  >
-                    ★ {item.vote_average.toFixed(1)}
-                  </span>
-                )}
-                {item.year && (
-                  <span className="discovery-card__year-pill">{item.year}</span>
-                )}
-              </div>
-              <div className="discovery-card__body">
-                <h3>{item.title}</h3>
-                <p className="discovery-card__date">
-                  {item.release_date
-                    ? new Date(
-                        `${item.release_date}T12:00:00`,
-                      ).toLocaleDateString(undefined, {
-                        month: "long",
-                        day: "numeric",
-                        year: "numeric",
-                      })
-                    : item.year || "Release date unknown"}
-                </p>
-                <span className="discovery-card__type">
-                  {item.media_type === "tv" ? "TV show" : "Movie"}
-                </span>
-                {item.reason && (
-                  <small className="discovery-card__reason">
-                    {item.reason}
-                  </small>
-                )}
-              </div>
-            </article>
-          );
-        })}
-      </div>
-      <button
-        className="discovery-load-more"
-        type="button"
-        onClick={onLoadMore}
-        disabled={loadingMore}
-      >
-        {loadingMore ? "Loading..." : "Load more"}
-      </button>
-    </section>
-  );
-}
-
-export default function DiscoverPage({ items, onAdd }) {
-  const [feeds, setFeeds] = useState({
-    recommendations: [],
-    trending: [],
-    upcoming: [],
-  });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [mediaType, setMediaType] = useState("all");
-  const [releaseYear, setReleaseYear] = useState("all");
-  const [trendingWindow, setTrendingWindow] = useState("week");
-  const [pages, setPages] = useState({
-    recommendations: 1,
-    trending: 1,
-    upcoming: 1,
-  });
-  const [loadingMore, setLoadingMore] = useState("");
-  const watchlistKeys = useMemo(
-    () =>
-      new Set(
-        items
-          .filter((item) => item.tmdb_id)
-          .map((item) => `${item.media_type || "movie"}-${item.tmdb_id}`),
-      ),
-    [items],
-  );
-  const topGenres = useMemo(() => {
-    const counts = {};
-    items.forEach((item) =>
-      (item.genre || "").split(",").forEach((genre) => {
-        const key = genre.trim();
-        if (key) counts[key] = (counts[key] || 0) + (item.rating || 1);
-      }),
-    );
-    return Object.entries(counts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)
-      .map(([genre]) => genre)
-      .join(",");
-  }, [items]);
-
-  useEffect(() => {
-    let cancelled = false;
-    api.discover("recommendations", topGenres).then((data) => {
-      if (!cancelled) {
-        setFeeds((f) => ({ ...f, recommendations: data }));
-        setPages((p) => ({ ...p, recommendations: 1 }));
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [topGenres]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    Promise.all([
-      api.discover("trending", "", trendingWindow),
-      api.discover("upcoming"),
-    ])
-      .then(([trending, upcoming]) => {
-        if (!cancelled) {
-          setFeeds((f) => ({ ...f, trending, upcoming }));
-          setPages((p) => ({ ...p, trending: 1, upcoming: 1 }));
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err.message);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [trendingWindow]);
-
-  const years = useMemo(
-    () =>
-      [
-        ...new Set(
-          Object.values(feeds)
-            .flat()
-            .map((item) => item.year)
-            .filter(Boolean),
-        ),
-      ].sort((a, b) => b - a),
-    [feeds],
-  );
-  const filterItems = (feed) =>
-    feed.filter(
-      (item) =>
-        (mediaType === "all" || item.media_type === mediaType) &&
-        (releaseYear === "all" || item.year === releaseYear),
-    );
-  async function loadMore(section) {
-    setLoadingMore(section);
-    const nextPage = pages[section] + 1;
-    try {
-      const more = await api.discover(
-        section,
-        section === "recommendations" ? topGenres : "",
-        trendingWindow,
-        nextPage,
-      );
-
-      if (!Array.isArray(more) || more.length === 0) {
-        return;
-      }
-
-      setFeeds((current) => {
-        const existingKeys = new Set(
-          current[section].map(
-            (item) => `${item.media_type || "movie"}-${item.tmdb_id}`,
-          ),
-        );
-        const uniqueNewItems = more.filter(
-          (item) =>
-            !existingKeys.has(`${item.media_type || "movie"}-${item.tmdb_id}`),
-        );
-
-        return {
-          ...current,
-          [section]: [...current[section], ...uniqueNewItems],
-        };
-      });
-
-      setPages((current) => ({ ...current, [section]: nextPage }));
-    } catch (err) {
-      setError(`Failed to load additional titles: ${err.message}`);
-    } finally {
-      setLoadingMore("");
-    }
-  }
-  return (
-    <div className="feature-page">
-      <header className="feature-page__intro">
-        <span className="feature-page__eyebrow">
-          <span className="feature-page__eyebrow-dot" />
-          Discover
-        </span>
-        <h1 className="feature-page__headline">
-          Discover your <span>next favorite</span>
-        </h1>
-        <p className="feature-page__lede">
-          Personalized picks shaped by your favorites and genre habits,
-          alongside what's moving now.
-        </p>
-      </header>
-      <div className="discovery-filters" aria-label="Recommendation filters">
-        <span className="discovery-filters__label">Show</span>
-        {[
-          ["all", "Everything"],
-          ["movie", "Movies"],
-          ["tv", "TV shows"],
-        ].map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            className={mediaType === value ? "active" : ""}
-            onClick={() => setMediaType(value)}
-          >
-            {label}
-          </button>
-        ))}
-        <label>
-          <span className="sr-only">Release year</span>
-          <select
-            value={releaseYear}
-            onChange={(event) => setReleaseYear(event.target.value)}
-          >
-            <option value="all">Any year</option>
-            {years.map((year) => (
-              <option key={year} value={year}>
-                {year}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      {error && <p className="banner banner--error">{error}</p>}
-      {loading && (
-        <div className="discovery-loading-state" aria-live="polite">
-          <LoadingRail title="Trending" />
-          <LoadingRail title="Picked for you" />
-        </div>
-      )}
-      {!loading && !error && (
-        <>
-          <Feed
-            title="Trending"
-            compact
-            headingExtra={
-              <div
-                className="trending-toggle"
-                role="group"
-                aria-label="Trending period"
-              >
-                <button
-                  className={trendingWindow === "day" ? "active" : ""}
-                  onClick={() => setTrendingWindow("day")}
-                  type="button"
-                >
-                  Today
-                </button>
-                <button
-                  className={trendingWindow === "week" ? "active" : ""}
-                  onClick={() => setTrendingWindow("week")}
-                  type="button"
-                >
-                  This Week
-                </button>
-              </div>
-            }
-            items={filterItems(feeds.trending)}
-            onAdd={onAdd}
-            watchlistKeys={watchlistKeys}
-            onLoadMore={() => loadMore("trending")}
-            loadingMore={loadingMore === "trending"}
-          />
-          <Feed
-            title="Picked for you"
-            compact
-            items={filterItems(feeds.recommendations)}
-            onAdd={onAdd}
-            watchlistKeys={watchlistKeys}
-            onLoadMore={() => loadMore("recommendations")}
-            loadingMore={loadingMore === "recommendations"}
-          />
-          <Feed
-            title="Top Sci-Fi"
-            items={filterItems(
-              feeds.trending.filter((item) =>
-                (item.genre || "").toLowerCase().includes("sci-fi"),
-              ),
-            )}
-            onAdd={onAdd}
-            watchlistKeys={watchlistKeys}
-            onLoadMore={() => loadMore("trending")}
-            loadingMore={loadingMore === "trending"}
-          />
-          <Feed
-            title="Upcoming releases"
-            items={filterItems(feeds.upcoming)}
-            onAdd={onAdd}
-            watchlistKeys={watchlistKeys}
-            onLoadMore={() => loadMore("upcoming")}
-            loadingMore={loadingMore === "upcoming"}
-          />
-        </>
       )}
     </div>
   );
@@ -2950,8 +2662,11 @@ export default function ProfilePage({ items, onOpenDetails }) {
 </file>
 
 <file path="frontend/src/components/ReviewsPage.jsx">
-import { useMemo, useState } from "react";
+import { Component, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import { api } from "../api.js";
 import LogEntryModal from "./LogEntryModal.jsx";
+import EpisodeTrackerModal from "./EpisodeTrackerModal.jsx";
 
 function relativeTime(dateStr) {
   if (!dateStr) return "";
@@ -3114,6 +2829,261 @@ function ReviewCard({ item, onOpenDetails, onUpdate, onDelete }) {
   );
 }
 
+class ModalBoundary extends Component {
+  state = { error: null };
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  render() {
+    if (this.state.error) {
+      return createPortal(
+        <div className="modal-overlay" onClick={this.props.onClose}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <p className="banner banner--error">
+              Episode editor crashed: {String(this.state.error?.message)}
+            </p>
+            <button
+              type="button"
+              className="btn btn--ghost btn--tiny"
+              onClick={this.props.onClose}
+            >
+              Close
+            </button>
+          </div>
+        </div>,
+        document.body,
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const hasGenre = (genreStr, filter) =>
+  filter === "all" ||
+  (genreStr || "")
+    .split(",")
+    .map((g) => g.trim().toLowerCase())
+    .includes(filter.toLowerCase());
+
+function Stars({ value }) {
+  const n = Math.max(0, Math.min(5, Math.round(value || 0)));
+  return (
+    <>
+      {"★".repeat(n)}
+      <span className="review-card__rating-empty">{"★".repeat(5 - n)}</span>
+    </>
+  );
+}
+
+function EpisodeReviewText({ text }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = text.length > 160;
+  return (
+    <>
+      <p
+        className={`season-episodes__text ${
+          isLong && !expanded ? "season-episodes__text--clamped" : ""
+        }`}
+      >
+        “{text}”
+      </p>
+      {isLong && (
+        <button
+          type="button"
+          className="review-card__toggle"
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {expanded ? "Show less" : "Read more"}
+        </button>
+      )}
+    </>
+  );
+}
+
+function SeasonReviewCard({ group, item, onOpenDetails, onChanged }) {
+  const [open, setOpen] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [showTracker, setShowTracker] = useState(false);
+  const { logs } = group;
+
+  const deleteSeason = async () => {
+    await Promise.all(
+      logs.map((l) =>
+        api.deleteEpisodeLog(l.item_id, l.season_number, l.episode_number),
+      ),
+    );
+    setConfirmingDelete(false);
+    onChanged();
+  };
+
+  const toggleLike = async (log) => {
+    await api.logEpisode(log.item_id, log.season_number, log.episode_number, {
+      rating: log.rating,
+      review: log.review,
+      liked: !log.liked,
+      watched_at: log.watched_at || "",
+    });
+    onChanged();
+  };
+
+  const deleteEpisode = async (log) => {
+    if (!window.confirm(`Delete your review of E${log.episode_number}?`))
+      return;
+    await api.deleteEpisodeLog(
+      log.item_id,
+      log.season_number,
+      log.episode_number,
+    );
+    onChanged();
+  };
+
+  return (
+    <article className="review-card">
+      <button
+        className="review-card__poster-btn"
+        onClick={() => item && onOpenDetails(item)}
+        aria-label={`View details for ${group.title}`}
+      >
+        {group.poster_url ? (
+          <img src={group.poster_url} alt="" className="review-card__poster" />
+        ) : (
+          <div className="review-card__poster review-card__poster--empty">
+            🎬
+          </div>
+        )}
+      </button>
+
+      <div className="review-card__body">
+        <div className="review-card__header">
+          <h3 className="review-card__title">
+            {group.title} · Season {group.season_number}
+          </h3>
+          <span className="review-card__time">
+            Reviewed {relativeTime(group.date)}
+          </span>
+        </div>
+
+        <div className="review-card__rating">
+          <Stars value={group.avg} />
+          <span className="season-meta">
+            {logs.length} episode review{logs.length !== 1 ? "s" : ""}
+          </span>
+        </div>
+
+        {group.genre && <p className="review-card__genre">{group.genre}</p>}
+
+        <button
+          type="button"
+          className="review-card__toggle"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+        >
+          {open ? "Hide episodes ▴" : "Show episodes ▾"}
+        </button>
+
+        {open && (
+          <ul className="season-episodes">
+            {logs.map((log) => (
+              <li key={log.id} className="season-episodes__row">
+                <div className="season-episodes__head">
+                  <span className="season-episodes__ep">
+                    E{log.episode_number}
+                  </span>
+                  <span className="review-card__rating">
+                    <Stars value={log.rating} />
+                  </span>
+                  <span className="season-episodes__actions">
+                    <button
+                      type="button"
+                      className={`review-card__action ${
+                        log.liked ? "review-card__action--active" : ""
+                      }`}
+                      title="Like"
+                      onClick={() => toggleLike(log)}
+                    >
+                      {log.liked ? "❤️" : "🤍"}
+                    </button>
+                    <button
+                      type="button"
+                      className="review-card__action"
+                      title="Delete episode review"
+                      onClick={() => deleteEpisode(log)}
+                    >
+                      🗑️
+                    </button>
+                  </span>
+                </div>
+                {log.review && <EpisodeReviewText text={log.review} />}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <div className="review-card__actions">
+          <button
+            type="button"
+            className="review-card__action"
+            title="Edit episode reviews"
+            onClick={() => setShowTracker(true)}
+          >
+            ✏️
+          </button>
+          {confirmingDelete ? (
+            <span className="review-card__confirm">
+              Delete season reviews?
+              <button
+                type="button"
+                className="btn btn--tiny btn--danger"
+                onClick={deleteSeason}
+              >
+                Yes
+              </button>
+              <button
+                type="button"
+                className="btn btn--tiny btn--ghost"
+                onClick={() => setConfirmingDelete(false)}
+              >
+                No
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              className="review-card__action"
+              title="Delete season reviews"
+              onClick={() => setConfirmingDelete(true)}
+            >
+              🗑️
+            </button>
+          )}
+        </div>
+      </div>
+
+      {showTracker &&
+        item &&
+        createPortal(
+          <ModalBoundary
+            onClose={() => {
+              setShowTracker(false);
+              onChanged();
+            }}
+          >
+            <EpisodeTrackerModal
+              item={item}
+              onClose={() => {
+                setShowTracker(false);
+                onChanged();
+              }}
+            />
+          </ModalBoundary>,
+          document.body,
+        )}
+    </article>
+  );
+}
+
 export default function ReviewsPage({
   items,
   onOpenDetails,
@@ -3122,12 +3092,23 @@ export default function ReviewsPage({
 }) {
   const [sortBy, setSortBy] = useState("recent");
   const [genreFilter, setGenreFilter] = useState("all");
+  const [episodeLogs, setEpisodeLogs] = useState([]);
+
+  const loadEpisodeLogs = () =>
+    api
+      .getEpisodeReviews()
+      .then(setEpisodeLogs)
+      .catch(() => {});
+
+  useEffect(() => {
+    loadEpisodeLogs();
+  }, []);
 
   const reviewed = items.filter((it) => it.status === "completed" && it.review);
 
   const genres = useMemo(() => {
     const set = new Set();
-    reviewed.forEach((it) => {
+    [...reviewed, ...episodeLogs].forEach((it) => {
       (it.genre || "")
         .split(",")
         .map((g) => g.trim())
@@ -3135,17 +3116,43 @@ export default function ReviewsPage({
         .forEach((g) => set.add(g));
     });
     return [...set].sort();
-  }, [reviewed]);
+  }, [reviewed, episodeLogs]);
+
+  const seasonGroups = useMemo(() => {
+    const map = new Map();
+    episodeLogs
+      .filter((log) => hasGenre(log.genre, genreFilter))
+      .forEach((log) => {
+        const key = `${log.item_id}-${log.season_number}`;
+        if (!map.has(key)) {
+          map.set(key, {
+            key,
+            item_id: log.item_id,
+            season_number: log.season_number,
+            title: log.title,
+            poster_url: log.poster_url,
+            genre: log.genre,
+            logs: [],
+          });
+        }
+        map.get(key).logs.push(log);
+      });
+
+    return [...map.values()].map((g) => {
+      g.logs.sort((a, b) => a.episode_number - b.episode_number);
+      const rated = g.logs.filter((l) => l.rating > 0);
+      g.avg = rated.length
+        ? rated.reduce((sum, l) => sum + l.rating, 0) / rated.length
+        : 0;
+      g.date = new Date(
+        Math.max(...g.logs.map((l) => new Date(l.watched_at || l.created_at))),
+      );
+      return g;
+    });
+  }, [episodeLogs, genreFilter]);
 
   const visible = reviewed
-    .filter(
-      (it) =>
-        genreFilter === "all" ||
-        (it.genre || "")
-          .split(",")
-          .map((g) => g.trim().toLowerCase())
-          .includes(genreFilter.toLowerCase()),
-    )
+    .filter((it) => hasGenre(it.genre, genreFilter))
     .sort((a, b) => {
       if (sortBy === "rating") return b.rating - a.rating;
       if (sortBy === "title") return a.title.localeCompare(b.title);
@@ -3154,13 +3161,15 @@ export default function ReviewsPage({
       return bDate - aDate;
     });
 
-  if (reviewed.length === 0) {
+  if (reviewed.length === 0 && episodeLogs.length === 0) {
     return (
       <div className="empty-state">
         <p>No reviews yet. Write one from any completed title.</p>
       </div>
     );
   }
+
+  const total = visible.length + seasonGroups.length;
 
   return (
     <div className="reviews-page">
@@ -3192,19 +3201,38 @@ export default function ReviewsPage({
         )}
 
         <span className="reviews-toolbar__count">
-          {visible.length} review{visible.length !== 1 ? "s" : ""}
+          {total} review{total !== 1 ? "s" : ""}
         </span>
       </div>
 
-      {visible.map((item) => (
-        <ReviewCard
-          key={item.id}
-          item={item}
-          onOpenDetails={onOpenDetails}
-          onUpdate={onUpdate}
-          onDelete={onDelete}
-        />
-      ))}
+      {[
+        ...visible.map((item) => ({
+          date: new Date(item.watched_at || item.created_at),
+          node: (
+            <ReviewCard
+              key={`item-${item.id}`}
+              item={item}
+              onOpenDetails={onOpenDetails}
+              onUpdate={onUpdate}
+              onDelete={onDelete}
+            />
+          ),
+        })),
+        ...seasonGroups.map((g) => ({
+          date: g.date,
+          node: (
+            <SeasonReviewCard
+              key={`season-${g.key}`}
+              group={g}
+              item={items.find((it) => it.id === g.item_id)}
+              onOpenDetails={onOpenDetails}
+              onChanged={loadEpisodeLogs}
+            />
+          ),
+        })),
+      ]
+        .sort((a, b) => b.date - a.date)
+        .map((entry) => entry.node)}
     </div>
   );
 }
@@ -4119,70 +4147,12 @@ export default function TitleDetailModal({ item, onClose, onBackfill }) {
 }
 </file>
 
-<file path="frontend/src/components/Topfive.jsx">
-const RANKS = [1, 2, 3, 4, 5];
-
-export default function TopFive({ items, onOpenDetails }) {
-  const byRank = {};
-  for (const item of items) {
-    if (item.favorite_rank) byRank[item.favorite_rank] = item;
-  }
-
-  return (
-    <section className="top-five">
-      <div className="top-five__header">
-        <h2>5 Favorite Films</h2>
-      </div>
-
-      <div className="top-five__shelf">
-        {RANKS.map((rank) => {
-          const item = byRank[rank];
-          return (
-            <div className="top-five__slot" key={rank}>
-              <span className="top-five__rank">{rank}</span>
-
-              {item ? (
-                <>
-                  <div className="top-five__poster-wrap">
-                    <button
-                      className="top-five__poster-btn"
-                      onClick={() => onOpenDetails(item)}
-                      aria-label={`View details for ${item.title}`}
-                      title="View details"
-                    >
-                      {item.poster_url ? (
-                        <img
-                          src={item.poster_url}
-                          alt=""
-                          className="top-five__poster"
-                        />
-                      ) : (
-                        <div className="top-five__poster top-five__poster--empty">
-                          🎬
-                        </div>
-                      )}
-                    </button>
-                  </div>
-                  <p className="top-five__title">{item.title}</p>
-                </>
-              ) : (
-                <div className="top-five__poster top-five__poster--placeholder">
-                  +
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-</file>
-
 <file path="frontend/src/components/WatchlistItem.jsx">
 import { useState } from "react";
 import StarRating from "./StarRating.jsx";
 import LogEntryModal from "./LogEntryModal.jsx";
+import EpisodeTrackerModal from "./EpisodeTrackerModal.jsx";
+import RankDropdown from "./RankDropdown.jsx";
 
 export default function WatchlistItem({
   item,
@@ -4192,6 +4162,7 @@ export default function WatchlistItem({
 }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [showLogModal, setShowLogModal] = useState(false);
+  const [showEpisodeTracker, setShowEpisodeTracker] = useState(false);
   const watchedLabel = item.watched_at
     ? `Watched ${new Date(item.watched_at).toLocaleDateString(undefined, {
         month: "short",
@@ -4227,35 +4198,41 @@ export default function WatchlistItem({
                 <p className="ticket__title" title={item.title}>
                   {item.title}
                 </p>
-                {item.genre && <p className="ticket__genre">{item.genre}</p>}
+                {item.genre && (
+                  <p className="ticket__genre" title={item.genre}>
+                    {item.genre}
+                  </p>
+                )}
                 <div className="ticket__meta" aria-label={watchedLabel}>
                   {item.liked && <span title="Liked">♥</span>}
                   <span>{watchedLabel}</span>
+                </div>
+                <div className="ticket__actions">
+                  <button
+                    className="btn btn--tiny ticket__log-btn"
+                    onClick={() => setShowLogModal(true)}
+                    title="Open diary entry"
+                  >
+                    ✎ Log
+                  </button>
+                  {item.media_type === "tv" && (
+                    <button
+                      className="btn btn--tiny ticket__log-btn"
+                      onClick={() => setShowEpisodeTracker(true)}
+                      title="Track episodes"
+                    >
+                      📺 Episodes
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
 
             <div className="ticket__controls">
-              <select
-                className={`favorite-select ${
-                  item.favorite_rank ? "favorite-select--active" : ""
-                }`}
-                value={item.favorite_rank || ""}
-                onChange={(e) =>
-                  onUpdate(item.id, {
-                    favorite_rank:
-                      e.target.value === "" ? null : Number(e.target.value),
-                  })
-                }
-                title="Top 5 of All Time"
-              >
-                <option value="">☆ Top 5</option>
-                <option value="1">★ #1</option>
-                <option value="2">★ #2</option>
-                <option value="3">★ #3</option>
-                <option value="4">★ #4</option>
-                <option value="5">★ #5</option>
-              </select>
+              <RankDropdown
+                value={item.favorite_rank}
+                onChange={(rank) => onUpdate(item.id, { favorite_rank: rank })}
+              />
 
               <div className="ticket__status-badge">
                 {item.status === "plan to watch"
@@ -4297,14 +4274,6 @@ export default function WatchlistItem({
                   ✕
                 </button>
               )}
-
-              <button
-                className="btn btn--tiny ticket__log-btn"
-                onClick={() => setShowLogModal(true)}
-                title="Open diary entry"
-              >
-                ✎ Log
-              </button>
             </div>
           </div>
         </div>
@@ -4320,6 +4289,12 @@ export default function WatchlistItem({
           onDelete={() => {
             onDelete(item.id);
           }}
+        />
+      )}
+      {showEpisodeTracker && (
+        <EpisodeTrackerModal
+          item={item}
+          onClose={() => setShowEpisodeTracker(false)}
         />
       )}
     </li>
@@ -4417,395 +4392,45 @@ export const api = {
       body: JSON.stringify(changes),
     }).then(handle);
   },
+
+  getTvSeasons(tmdbId) {
+    return fetch(`${BASE_URL}/tv/${tmdbId}/seasons`).then(handle);
+  },
+
+  getSeasonEpisodes(tmdbId, seasonNumber) {
+    return fetch(`${BASE_URL}/tv/${tmdbId}/season/${seasonNumber}`).then(
+      handle,
+    );
+  },
+
+  getEpisodeLogs(itemId) {
+    return fetch(`${BASE_URL}/items/${itemId}/episodes`).then(handle);
+  },
+
+  getEpisodeReviews() {
+    return fetch(`${BASE_URL}/episode-reviews`).then(handle);
+  },
+
+  logEpisode(itemId, seasonNumber, episodeNumber, data) {
+    return fetch(
+      `${BASE_URL}/items/${itemId}/episodes/${seasonNumber}/${episodeNumber}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      },
+    ).then(handle);
+  },
+
+  deleteEpisodeLog(itemId, seasonNumber, episodeNumber) {
+    return fetch(
+      `${BASE_URL}/items/${itemId}/episodes/${seasonNumber}/${episodeNumber}`,
+      {
+        method: "DELETE",
+      },
+    ).then(handle);
+  },
 };
-</file>
-
-<file path="frontend/src/App.jsx">
-import { useEffect, useMemo, useState } from "react";
-import { api } from "./api.js";
-import FilterTabs from "./components/FilterTabs.jsx";
-import AddItemForm from "./components/AddItemForm.jsx";
-import WatchlistItem from "./components/WatchlistItem.jsx";
-import TopFive from "./components/Topfive.jsx";
-import TitleDetailModal from "./components/TitleDetailModal.jsx";
-import PosterGrid from "./components/PosterGrid.jsx";
-import ReviewsPage from "./components/ReviewsPage.jsx";
-import StatsPage from "./components/StatsPage.jsx";
-import ProfilePage from "./components/ProfilePage.jsx";
-import DiscoverPage from "./components/DiscoverPage.jsx";
-import CollectionsPage from "./components/CollectionsPage.jsx";
-import DiaryPage from "./components/DiaryPage.jsx";
-
-export default function App() {
-  const [items, setItems] = useState([]);
-  const [filter, setFilter] = useState("all");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [detailItem, setDetailItem] = useState(null);
-  const [page, setPage] = useState("watchlist");
-  const [showBackToTop, setShowBackToTop] = useState(false);
-  const [showMenu, setShowMenu] = useState(false);
-  const [listQuery, setListQuery] = useState("");
-  const [listGenre, setListGenre] = useState("all");
-
-  // Wraps a state update in the browser's View Transitions API when
-  // available, so switching tabs/filters crossfades smoothly instead of
-  // the page snapping instantly to its new height/content.
-  function smoothly(update) {
-    if (document.startViewTransition) {
-      document.startViewTransition(update);
-    } else {
-      update();
-    }
-  }
-
-  function changeFilter(next) {
-    smoothly(() => setFilter(next));
-  }
-
-  function changePage(next) {
-    smoothly(() => setPage(next));
-    setShowMenu(false);
-  }
-
-  function scrollToSection(id) {
-    document.getElementById(id)?.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
-    });
-    setShowMenu(false);
-  }
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    api
-      .list()
-      .then((data) => {
-        if (!cancelled) setItems(data);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err.message);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    function updateScrollState() {
-      setShowBackToTop(window.scrollY > 520);
-    }
-
-    updateScrollState();
-    window.addEventListener("scroll", updateScrollState, { passive: true });
-    return () => window.removeEventListener("scroll", updateScrollState);
-  }, []);
-
-  const counts = useMemo(() => {
-    const c = {
-      all: items.length,
-      watching: 0,
-      "plan to watch": 0,
-      completed: 0,
-    };
-    for (const item of items) c[item.status] = (c[item.status] || 0) + 1;
-    return c;
-  }, [items]);
-
-  const visibleItems = useMemo(() => {
-    if (filter === "all") return items;
-    return items.filter((item) => item.status === filter);
-  }, [items, filter]);
-
-  const listGenres = useMemo(() => {
-    const genres = new Set();
-    items.forEach((item) =>
-      (item.genre || "")
-        .split(",")
-        .map((genre) => genre.trim())
-        .filter(Boolean)
-        .forEach((genre) => genres.add(genre)),
-    );
-    return [...genres].sort((a, b) => a.localeCompare(b));
-  }, [items]);
-
-  const searchedItems = useMemo(() => {
-    const query = listQuery.trim().toLowerCase();
-    return visibleItems.filter((item) => {
-      const matchesQuery =
-        !query ||
-        item.title.toLowerCase().includes(query) ||
-        (item.genre || "").toLowerCase().includes(query);
-      const matchesGenre =
-        listGenre === "all" ||
-        (item.genre || "")
-          .split(",")
-          .map((genre) => genre.trim().toLowerCase())
-          .includes(listGenre.toLowerCase());
-      return matchesQuery && matchesGenre;
-    });
-  }, [listGenre, listQuery, visibleItems]);
-
-  async function handleAdd(form) {
-    const normalizedTitle = form.title.trim().toLowerCase();
-    const isDuplicate = items.some((it) => {
-      if (
-        form.tmdb_id &&
-        it.tmdb_id &&
-        it.tmdb_id === form.tmdb_id &&
-        it.media_type === form.media_type
-      ) {
-        return true;
-      }
-      return it.title.trim().toLowerCase() === normalizedTitle;
-    });
-    if (isDuplicate) {
-      throw new Error(`"${form.title.trim()}" is already on your list.`);
-    }
-    const created = await api.create(form);
-    setItems((prev) => [created, ...prev]);
-  }
-  async function handleUpdate(id, changes) {
-    const previous = items;
-    setItems((prev) =>
-      prev.map((it) => (it.id === id ? { ...it, ...changes } : it)),
-    );
-    try {
-      await api.update(id, changes);
-      if ("favorite_rank" in changes) {
-        const fresh = await api.list();
-        setItems(fresh);
-      }
-    } catch (err) {
-      setItems(previous);
-      setError(err.message);
-    }
-  }
-
-  async function handleDelete(id) {
-    const previous = items;
-    setItems((prev) => prev.filter((it) => it.id !== id));
-    try {
-      await api.remove(id);
-    } catch (err) {
-      setItems(previous);
-      setError(err.message);
-    }
-  }
-
-  return (
-    <div className="page">
-      <header className="masthead">
-        <div className="masthead__title-group">
-          <h1>Watchlist</h1>
-          <p>Everything you're watching, want to watch, or already loved.</p>
-        </div>
-      </header>
-
-      <nav className="page-nav" aria-label="Main navigation">
-        <div className="page-nav__links">
-          {[
-            { key: "watchlist", label: "Watchlist" },
-            { key: "discover", label: "Discover" },
-            { key: "collections", label: "Collections" },
-            { key: "diary", label: "Diary" },
-            { key: "reviews", label: "Reviews" },
-            { key: "stats", label: "Stats" },
-            { key: "profile", label: "Profile" },
-          ].map((p) => (
-            <button
-              key={p.key}
-              className={`page-nav__btn ${page === p.key ? "page-nav__btn--active" : ""}`}
-              onClick={() => changePage(p.key)}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="page-nav__menu-wrap">
-          <button
-            className="page-nav__menu-btn"
-            onClick={() => setShowMenu((open) => !open)}
-            aria-label="Open more navigation"
-            aria-expanded={showMenu}
-            aria-haspopup="menu"
-          >
-            <span aria-hidden="true">☰</span>
-          </button>
-          {showMenu && (
-            <div className="page-nav__menu" role="menu">
-              <button
-                role="menuitem"
-                onClick={() => scrollToSection("top-five")}
-              >
-                Top 5 favorites
-              </button>
-              <button
-                role="menuitem"
-                onClick={() => scrollToSection("add-movie")}
-              >
-                Add a movie
-              </button>
-              <button
-                role="menuitem"
-                onClick={() => {
-                  window.scrollTo({ top: 0, behavior: "smooth" });
-                  setShowMenu(false);
-                }}
-              >
-                Back to top
-              </button>
-            </div>
-          )}
-        </div>
-      </nav>
-
-      <main className="content">
-        {error && (
-          <p className="banner banner--error">
-            {error} — make sure the backend is running on port 5000.
-          </p>
-        )}
-
-        {page === "watchlist" && (
-          <>
-            <div id="top-five">
-              <TopFive
-                items={items}
-                onAssign={(id, rank) =>
-                  handleUpdate(id, { favorite_rank: rank })
-                }
-                onRemove={(id) => handleUpdate(id, { favorite_rank: null })}
-                onUpdateNote={(id, note) =>
-                  handleUpdate(id, { favorite_note: note })
-                }
-                onOpenDetails={setDetailItem}
-              />
-            </div>
-
-            <div id="add-movie">
-              <AddItemForm onAdd={handleAdd} />
-            </div>
-
-            <FilterTabs
-              active={filter}
-              onChange={changeFilter}
-              counts={counts}
-            />
-
-            <div className="list-toolbar">
-              <label className="list-toolbar__search">
-                <span className="sr-only">Search your watchlist</span>
-                <span aria-hidden="true">⌕</span>
-                <input
-                  type="search"
-                  placeholder="Search titles or genres"
-                  value={listQuery}
-                  onChange={(e) => setListQuery(e.target.value)}
-                />
-              </label>
-              <label className="list-toolbar__genre">
-                <span className="sr-only">Filter by genre</span>
-                <select
-                  value={listGenre}
-                  onChange={(e) => setListGenre(e.target.value)}
-                >
-                  <option value="all">All genres</option>
-                  {listGenres.map((genre) => (
-                    <option key={genre} value={genre}>
-                      {genre}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            {loading ? (
-              <p className="empty-state">Loading your shelf…</p>
-            ) : searchedItems.length === 0 ? (
-              <div className="empty-state">
-                <p>
-                  {visibleItems.length === 0
-                    ? filter === "all"
-                      ? "Nothing on the shelf yet. Add the first title."
-                      : `Nothing in "${filter}" yet.`
-                    : "No titles match those filters."}
-                </p>
-              </div>
-            ) : filter === "all" ? (
-              <ul className="ticket-list">
-                {searchedItems.map((item) => (
-                  <WatchlistItem
-                    key={item.id}
-                    item={item}
-                    onUpdate={handleUpdate}
-                    onDelete={handleDelete}
-                    onOpenDetails={setDetailItem}
-                  />
-                ))}
-              </ul>
-            ) : (
-              <PosterGrid items={searchedItems} onOpenDetails={setDetailItem} />
-            )}
-          </>
-        )}
-
-        {page === "reviews" && (
-          <ReviewsPage
-            items={items}
-            onOpenDetails={setDetailItem}
-            onUpdate={handleUpdate}
-            onDelete={handleDelete}
-          />
-        )}
-
-        {page === "discover" && (
-          <DiscoverPage items={items} onAdd={handleAdd} />
-        )}
-
-        {page === "collections" && <CollectionsPage items={items} />}
-
-        {page === "diary" && (
-          <DiaryPage items={items} onOpenDetails={setDetailItem} />
-        )}
-
-        {page === "stats" && (
-          <StatsPage items={items} onOpenDetails={setDetailItem} />
-        )}
-
-        {page === "profile" && (
-          <ProfilePage items={items} onOpenDetails={setDetailItem} />
-        )}
-      </main>
-
-      {detailItem && (
-        <TitleDetailModal
-          item={detailItem}
-          onClose={() => setDetailItem(null)}
-          onBackfill={(id, tmdb_id, media_type) =>
-            handleUpdate(id, { tmdb_id, media_type })
-          }
-        />
-      )}
-
-      {showBackToTop && (
-        <button
-          className="back-to-top"
-          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-          aria-label="Back to top"
-          title="Back to top"
-        >
-          <span aria-hidden="true">↑</span>
-          <span>Top</span>
-        </button>
-      )}
-    </div>
-  );
-}
 </file>
 
 <file path="frontend/src/index.css">
@@ -5103,9 +4728,7 @@ select {
   background: #1c1338;
   color: var(--gold);
 }
-
-.list-toolbar__search input,
-.list-toolbar__genre select {
+.list-toolbar__search input {
   width: 100%;
   border: 0;
   outline: 0;
@@ -5118,25 +4741,8 @@ select {
 .list-toolbar__search input {
   padding: 0.58rem 0;
 }
-.list-toolbar__search:focus-within,
-.list-toolbar__genre:focus-within {
+.list-toolbar__search:focus-within {
   border-color: var(--gold);
-}
-
-.list-toolbar__genre {
-  width: 145px;
-  flex-shrink: 0;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 0.58rem 0.7rem;
-  background: #1c1338;
-}
-
-.list-toolbar__genre select {
-  cursor: pointer;
-}
-.list-toolbar__genre option {
-  background: var(--espresso);
 }
 
 .sr-only {
@@ -5235,6 +4841,9 @@ select {
 }
 
 @media (max-width: 560px) {
+  .list-toolbar__genre {
+    width: 100%;
+  }
   .index-card__row--fields {
     grid-template-columns: 1fr;
   }
@@ -5569,6 +5178,13 @@ select {
   background-color: var(--status-completed);
 }
 
+.ticket__actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+  flex-wrap: wrap;
+}
+
 .ticket__inner {
   flex: 1;
   display: flex;
@@ -5583,6 +5199,7 @@ select {
   justify-content: space-between;
   gap: 1rem;
   padding: 0.9rem 1.1rem;
+  flex-wrap: nowrap;
 }
 
 .ticket__main {
@@ -5637,6 +5254,9 @@ select {
   margin: 0.15rem 0 0;
   font-size: 0.8rem;
   color: var(--text-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ticket__meta {
@@ -5657,8 +5277,9 @@ select {
   display: flex;
   align-items: center;
   gap: 0.9rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 .ticket__status-badge {
@@ -5674,30 +5295,49 @@ select {
 }
 
 .favorite-select {
-  border: 1px solid var(--gold);
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid rgba(192, 132, 252, 0.28);
   border-radius: 6px;
-  padding: 0.35rem 0.5rem;
+  padding: 0.35rem 1.7rem 0.35rem 0.6rem;
   font-size: 0.8rem;
-  background: #1c1338;
-  color: var(--accent-dark);
   font-weight: 600;
+  color: var(--accent-dark);
   cursor: pointer;
+  background-color: #1c1338;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5 7.5l5 5 5-5' fill='none' stroke='%23c084fc' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.45rem center;
+  background-size: 12px;
+}
+
+.favorite-select:hover,
+.favorite-select:focus-visible {
+  outline: 0;
+  border-color: rgba(192, 132, 252, 0.6);
 }
 
 .favorite-select--active {
-  background: rgba(192, 132, 252, 0.18);
-  box-shadow: 0 0 0 1px rgba(192, 132, 252, 0.15);
+  background-color: #1c1338;
+}
+
+.favorite-select option {
+  background: #1c1338;
+  color: #e4c8ff;
+  font-size: 14px;
+  padding: 6px 10px;
 }
 
 .ticket__log-btn {
-  border: 1px solid var(--accent-dark);
-  background: rgba(168, 85, 247, 0.16);
+  border: 1px solid rgba(192, 132, 252, 0.22);
+  background: transparent;
   color: #e4c8ff;
   white-space: nowrap;
 }
 
 .ticket__log-btn:hover {
-  background: var(--accent-dark);
+  background: rgba(168, 85, 247, 0.18);
+  border-color: rgba(192, 132, 252, 0.5);
   color: #fff;
 }
 
@@ -9097,13 +8737,21 @@ select {
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(circle at 88% 0%, rgba(139, 92, 246, 0.18), transparent 42%),
+    radial-gradient(
+      circle at 88% 0%,
+      rgba(139, 92, 246, 0.18),
+      transparent 42%
+    ),
     radial-gradient(circle at 0% 100%, rgba(56, 189, 248, 0.1), transparent 45%);
 }
 
 .feature-page__intro h1 {
   margin: 0.35rem 0 0.6rem;
-  font-family: "Plus Jakarta Sans", "Inter", -apple-system, sans-serif;
+  font-family:
+    "Plus Jakarta Sans",
+    "Inter",
+    -apple-system,
+    sans-serif;
   font-weight: 800;
   letter-spacing: -0.02em;
   font-size: clamp(2rem, 5vw, 3.5rem);
@@ -9128,7 +8776,9 @@ select {
   border: none;
   background: transparent;
   border-radius: 999px;
-  transition: background 0.18s ease, color 0.18s ease;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease;
 }
 
 .discovery-filters button.active {
@@ -9144,12 +8794,16 @@ select {
 
 .discovery-card__poster-wrap {
   border-radius: 14px; /* rounded-xl equivalent */
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
 .discovery-card:hover .discovery-card__poster-wrap {
   transform: scale(1.05) translateY(-4px);
-  box-shadow: 0 0 0 1px rgba(168, 85, 247, 0.5), var(--shadow);
+  box-shadow:
+    0 0 0 1px rgba(168, 85, 247, 0.5),
+    var(--shadow);
 }
 
 .discovery-card__year-pill {
@@ -9190,7 +8844,11 @@ select {
   width: 260px;
   height: 260px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(168, 85, 247, 0.35), transparent 70%);
+  background: radial-gradient(
+    circle,
+    rgba(168, 85, 247, 0.35),
+    transparent 70%
+  );
   filter: blur(10px);
   pointer-events: none;
 }
@@ -9221,7 +8879,11 @@ select {
   position: relative;
   z-index: 1;
   margin: 0 0 0.5rem;
-  font-family: "Plus Jakarta Sans", "Inter", -apple-system, sans-serif;
+  font-family:
+    "Plus Jakarta Sans",
+    "Inter",
+    -apple-system,
+    sans-serif;
   font-weight: 800;
   letter-spacing: -0.02em;
   font-size: clamp(1.8rem, 4.5vw, 3rem);
@@ -9229,7 +8891,12 @@ select {
 }
 
 .feature-page__headline span {
-  background: linear-gradient(90deg, var(--accent), var(--accent-dark) 60%, #38bdf8);
+  background: linear-gradient(
+    90deg,
+    var(--accent),
+    var(--accent-dark) 60%,
+    #38bdf8
+  );
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -9249,6 +8916,571 @@ select {
   .feature-page__intro {
     padding: 1.25rem 1.25rem;
   }
+}
+
+/* ---------- TV SHOWS MODAL ---------- */
+
+.modal--episodes {
+  max-width: 620px;
+}
+
+.episode-tracker__title {
+  margin: 0 0 1rem;
+  padding-right: 2rem;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 1.2rem;
+}
+
+.episode-tracker__season-select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.episode-tracker__season-select label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  color: var(--text-soft);
+}
+
+.episode-tracker__season-select select {
+  border: 1px solid var(--card-edge);
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+  background: #1c1338;
+  color: var(--text);
+}
+.episode-tracker__summary {
+  font-size: 0.8rem;
+  color: var(--accent-dark);
+  font-weight: 700;
+}
+
+.episode-tracker__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 55vh;
+  overflow-y: auto;
+}
+
+.episode-row {
+  border: 1px solid var(--card-edge);
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.episode-row--watched {
+  border-color: var(--accent-dark);
+}
+
+.episode-row__toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.6rem 0.8rem;
+  background: none;
+  border: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.episode-row__check {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--card-edge);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-soft);
+}
+
+.episode-row--watched .episode-row__check {
+  background: var(--accent-dark);
+  border-color: var(--accent-dark);
+  color: #fff;
+}
+
+.episode-row__info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.episode-row__title {
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.episode-row__meta {
+  font-size: 0.72rem;
+  color: var(--gold);
+}
+
+.episode-row__editor {
+  padding: 0.75rem 0.9rem 0.9rem;
+  border-top: 1px solid var(--card-edge);
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.episode-row__field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text-soft);
+}
+
+.episode-row__field input {
+  border: 1px solid var(--card-edge);
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+  background: var(--espresso);
+  color: var(--text);
+  color-scheme: dark;
+}
+
+.episode-row__stars {
+  display: flex;
+  gap: 0.15rem;
+}
+
+.episode-row__stars button {
+  background: none;
+  border: none;
+  font-size: 1.15rem;
+  color: var(--gold);
+  cursor: pointer;
+  padding: 0.1rem;
+}
+
+.episode-row__editor textarea {
+  width: 100%;
+  min-height: 60px;
+  border: 1px solid var(--card-edge);
+  border-radius: 6px;
+  padding: 0.5rem;
+  background: var(--espresso);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+  resize: vertical;
+}
+
+.episode-row__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+/* ---------- Genre dropdown ---------- */
+
+.genre-dd {
+  position: relative;
+  width: 160px;
+  flex-shrink: 0;
+}
+
+.genre-dd__trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.58rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #1c1338;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.genre-dd__trigger:hover {
+  border-color: var(--accent-dark);
+}
+
+.genre-dd__trigger:focus-visible,
+.genre-dd--open .genre-dd__trigger {
+  outline: 0;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(192, 132, 252, 0.18);
+}
+
+.genre-dd--filtered .genre-dd__trigger {
+  background: rgba(192, 132, 252, 0.14);
+  border-color: var(--accent-dark);
+}
+
+.genre-dd__value {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.genre-dd__chevron {
+  flex-shrink: 0;
+  color: var(--gold);
+  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.genre-dd--open .genre-dd__chevron {
+  transform: rotate(180deg);
+}
+
+.genre-dd__menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 60;
+  min-width: 100%;
+  width: max-content;
+  max-width: 260px;
+  max-height: 264px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0.35rem;
+  list-style: none;
+  border: 1px solid var(--card-edge);
+  border-radius: 10px;
+  background: rgba(28, 19, 56, 0.96);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  box-shadow:
+    0 18px 40px rgba(6, 2, 20, 0.55),
+    0 0 0 1px rgba(192, 132, 252, 0.08);
+
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-6px) scale(0.97);
+  transform-origin: top right;
+  transition:
+    opacity 0.18s ease,
+    transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1),
+    visibility 0s linear 0.2s;
+
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.genre-dd--open .genre-dd__menu {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+  transition-delay: 0s;
+}
+
+.genre-dd__menu::-webkit-scrollbar {
+  display: none;
+}
+
+.genre-dd__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  color: var(--text-soft);
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+}
+
+.genre-dd__option--active {
+  background: rgba(192, 132, 252, 0.16);
+  color: var(--text);
+}
+
+.genre-dd__option--selected {
+  color: var(--gold);
+  font-weight: 600;
+}
+
+.genre-dd__option svg {
+  flex-shrink: 0;
+}
+
+@media (max-width: 560px) {
+  .genre-dd {
+    width: 100%;
+  }
+
+  .genre-dd__menu {
+    left: 0;
+    right: 0;
+    width: auto;
+    max-width: none;
+    transform-origin: top center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .genre-dd__menu,
+  .genre-dd__chevron {
+    transition: none;
+  }
+}
+
+.season-meta {
+  margin-left: 0.6rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-soft);
+  letter-spacing: 0;
+}
+
+.season-episodes {
+  list-style: none;
+  margin: 0.75rem 0 0.5rem;
+  padding: 0.1rem 0 0.1rem 0.9rem;
+  border-left: 2px solid var(--card-edge);
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  animation: seasonOpen 0.22s ease-out both;
+}
+
+@keyframes seasonOpen {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.season-episodes__head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.season-episodes__ep {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--gold);
+  min-width: 2rem;
+}
+
+.season-episodes__actions {
+  display: flex;
+  gap: 0.35rem;
+  margin-left: auto;
+}
+
+.season-episodes__text {
+  margin: 0.3rem 0 0;
+  font-size: 0.85rem;
+  font-style: italic;
+  color: var(--text-soft);
+  line-height: 1.45;
+}
+
+.season-episodes__text--clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* keep poster pinned to the top of the card */
+.review-card {
+  align-items: flex-start;
+}
+
+.review-card__poster-btn {
+  align-self: flex-start;
+}
+
+/* let the text column shrink and wrap long words */
+.review-card__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.review-card__text,
+.season-episodes__text {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* ---------- Rank (Top 5) dropdown ---------- */
+
+.rank-dd__trigger {
+  min-width: 88px;
+  text-align: left;
+}
+
+.rank-dd__menu {
+  z-index: 200;
+  margin: 0;
+  padding: 0.35rem;
+  list-style: none;
+  border: 1px solid var(--card-edge);
+  border-radius: 10px;
+  background: rgba(28, 19, 56, 0.97);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  box-shadow:
+    0 18px 40px rgba(6, 2, 20, 0.55),
+    0 0 0 1px rgba(192, 132, 252, 0.08);
+  transform-origin: top left;
+  animation: rankDdIn 0.18s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.rank-dd__menu--up {
+  transform-origin: bottom left;
+}
+
+@keyframes rankDdIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.rank-dd__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: var(--text-soft);
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+}
+
+.rank-dd__option--active {
+  background: rgba(192, 132, 252, 0.16);
+  color: var(--text);
+}
+
+.rank-dd__option--selected {
+  color: var(--gold);
+  font-weight: 600;
+}
+
+/* ---------- Generic select dropdown ---------- */
+
+.select-dd__trigger {
+  width: 100%;
+  min-width: 150px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+  font: inherit;
+  font-size: 0.95rem;
+  color: var(--text);
+  background: #1c1338;
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.select-dd__trigger:hover {
+  border-color: var(--accent-dark);
+}
+
+.select-dd__trigger:focus-visible,
+.select-dd__trigger--open {
+  outline: 0;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(192, 132, 252, 0.18);
+}
+
+.select-dd__value {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.select-dd__chevron {
+  flex-shrink: 0;
+  color: var(--gold);
+  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.select-dd__trigger--open .select-dd__chevron {
+  transform: rotate(180deg);
+}
+
+/* ---------- collections part ---------- */
+
+.inline-create {
+  align-items: stretch;
+}
+
+.inline-create input {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+  background: #1c1338;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.inline-create input:focus {
+  outline: 0;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(192, 132, 252, 0.18);
+}
+
+.inline-create input::placeholder {
+  color: var(--text-soft);
+  opacity: 0.7;
+}
+
+.inline-create button {
+  width: auto;
+  flex-shrink: 0;
+  margin-top: 0;
+  padding: 0.6rem 1rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
 }
 </file>
 
@@ -9484,6 +9716,1725 @@ at or edit your data directly. To back up your watchlist, just copy that file.
 
 If you ever run the backend somewhere other than `localhost:5000`, update the
 `BASE_URL` constant at the top of `frontend/src/api.js` to match.
+</file>
+
+<file path="backend/app.py">
+"""
+Watchlist Tracker — backend API
+
+A small Flask app backed by SQLite. Stores movies/anime with a title,
+genre, status, rating, and an optional poster image. Data is persisted
+to watchlist.db in this same folder, so it survives restarts.
+
+Title search/autocomplete (with posters) is powered by TMDB
+(themoviedb.org). Put your API key in a `.env` file in this folder:
+    TMDB_API_KEY=your_key_here
+"""
+
+from flask import Flask, jsonify, request, g
+from flask_cors import CORS
+from dotenv import load_dotenv
+import sqlite3
+import os
+import math  
+import json
+import requests
+from datetime import datetime
+from collections import Counter
+
+load_dotenv()
+
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "watchlist.db")
+VALID_STATUSES = {"watching", "plan to watch", "completed"}
+
+TMDB_API_KEY = os.environ.get("TMDB_API_KEY", "")
+TMDB_BASE = "https://api.themoviedb.org/3"
+TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w200"
+
+app = Flask(__name__)
+CORS(app)
+
+
+def get_db():
+    if "db" not in g:
+        g.db = sqlite3.connect(DB_PATH)
+        g.db.row_factory = sqlite3.Row
+        g.db.execute("PRAGMA foreign_keys = ON")
+    return g.db
+
+
+@app.teardown_appcontext
+def close_db(exception=None):
+    db = g.pop("db", None)
+    if db is not None:
+        db.close()
+
+
+def init_db():
+    """Create the items table if it doesn't exist yet, and add new columns
+    to older databases that were created before poster_url existed."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            genre TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'plan to watch',
+            rating INTEGER NOT NULL DEFAULT 0,
+            poster_url TEXT NOT NULL DEFAULT '',
+            review TEXT NOT NULL DEFAULT '',
+            favorite_rank INTEGER DEFAULT NULL,
+            favorite_note TEXT NOT NULL DEFAULT '',
+            tmdb_id INTEGER DEFAULT NULL,
+            media_type TEXT DEFAULT NULL,
+            watched_at TEXT DEFAULT NULL,
+            is_rewatch INTEGER NOT NULL DEFAULT 0,
+            liked INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+    )
+    # Migration for databases created before poster_url/review/favorite_rank existed.
+    existing_columns = {row[1] for row in conn.execute("PRAGMA table_info(items)")}
+    if "poster_url" not in existing_columns:
+        conn.execute("ALTER TABLE items ADD COLUMN poster_url TEXT NOT NULL DEFAULT ''")
+    if "review" not in existing_columns:
+        conn.execute("ALTER TABLE items ADD COLUMN review TEXT NOT NULL DEFAULT ''")
+    if "favorite_rank" not in existing_columns:
+        conn.execute("ALTER TABLE items ADD COLUMN favorite_rank INTEGER DEFAULT NULL")
+    if "favorite_note" not in existing_columns:
+        conn.execute("ALTER TABLE items ADD COLUMN favorite_note TEXT NOT NULL DEFAULT ''")
+    if "tmdb_id" not in existing_columns:
+        conn.execute("ALTER TABLE items ADD COLUMN tmdb_id INTEGER DEFAULT NULL")
+    if "media_type" not in existing_columns:
+        conn.execute("ALTER TABLE items ADD COLUMN media_type TEXT DEFAULT NULL")
+    if "watched_at" not in existing_columns:
+        conn.execute("ALTER TABLE items ADD COLUMN watched_at TEXT DEFAULT NULL")
+    if "is_rewatch" not in existing_columns:
+        conn.execute("ALTER TABLE items ADD COLUMN is_rewatch INTEGER NOT NULL DEFAULT 0")
+    if "liked" not in existing_columns:
+        conn.execute("ALTER TABLE items ADD COLUMN liked INTEGER NOT NULL DEFAULT 0")
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS episode_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_id INTEGER NOT NULL,
+            season_number INTEGER NOT NULL,
+            episode_number INTEGER NOT NULL,
+            rating INTEGER NOT NULL DEFAULT 0,
+            review TEXT NOT NULL DEFAULT '',
+            liked INTEGER NOT NULL DEFAULT 0,
+            watched_at TEXT DEFAULT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(item_id, season_number, episode_number),
+            FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS profile (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            name TEXT NOT NULL DEFAULT 'Movie Lover',
+            bio TEXT NOT NULL DEFAULT '',
+            avatar TEXT NOT NULL DEFAULT '🎬',
+            pinned_favorites TEXT NOT NULL DEFAULT '[]'
+        )
+        """
+    )
+    profile_columns = {row[1] for row in conn.execute("PRAGMA table_info(profile)")}
+    if "pinned_favorites" not in profile_columns:
+        conn.execute("ALTER TABLE profile ADD COLUMN pinned_favorites TEXT NOT NULL DEFAULT '[]'")
+    conn.execute(
+        "INSERT OR IGNORE INTO profile (id, name, bio, avatar, pinned_favorites) VALUES (1, 'Movie Lover', '', '🎬', '[]')"
+    )
+    conn.commit()
+
+def row_to_dict(row):
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "genre": row["genre"],
+        "status": row["status"],
+        "rating": row["rating"],
+        "poster_url": row["poster_url"] if "poster_url" in row.keys() else "",
+        "review": row["review"] if "review" in row.keys() else "",
+        "favorite_rank": row["favorite_rank"] if "favorite_rank" in row.keys() else None,
+        "favorite_note": row["favorite_note"] if "favorite_note" in row.keys() else "",
+        "tmdb_id": row["tmdb_id"] if "tmdb_id" in row.keys() else None,
+        "media_type": row["media_type"] if "media_type" in row.keys() else None,
+        "watched_at": row["watched_at"] if "watched_at" in row.keys() else None,
+        "is_rewatch": bool(row["is_rewatch"]) if "is_rewatch" in row.keys() else False,
+        "liked": bool(row["liked"]) if "liked" in row.keys() else False,
+        "created_at": row["created_at"],
+    }
+
+
+def normalize_pinned_favorites(value):
+    if value in (None, ""):
+        return []
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+    else:
+        parsed = value
+
+    if not isinstance(parsed, list):
+        return []
+
+    cleaned = []
+    for item in parsed:
+        try:
+            cleaned_value = int(item)
+        except (TypeError, ValueError):
+            continue
+        if cleaned_value not in cleaned:
+            cleaned.append(cleaned_value)
+    return cleaned
+
+def validate_payload(data, partial=False):
+    cleaned = {}
+
+    if "title" in data or not partial:
+        title = (data.get("title") or "").strip()
+        if not title:
+            return None, "Title is required."
+        cleaned["title"] = title
+
+    if "genre" in data or not partial:
+        cleaned["genre"] = (data.get("genre") or "").strip()
+
+    if "status" in data or not partial:
+        status = (data.get("status") or "plan to watch").strip().lower()
+        if status not in VALID_STATUSES:
+            return None, f"Status must be one of: {', '.join(sorted(VALID_STATUSES))}."
+        cleaned["status"] = status
+
+        if status == "completed" and "watched_at" not in data:
+            cleaned["watched_at"] = datetime.now().strftime("%Y-%m-%d")
+
+    if "rating" in data or not partial:
+        try:
+            rating = int(data.get("rating", 0))
+        except (TypeError, ValueError):
+            return None, "Rating must be a whole number between 0 and 5."
+        if rating < 0 or rating > 5:
+            return None, "Rating must be between 0 and 5."
+        cleaned["rating"] = rating
+
+    if "poster_url" in data:
+        cleaned["poster_url"] = (data.get("poster_url") or "").strip()
+    elif not partial:
+        cleaned["poster_url"] = ""
+
+    if "review" in data:
+        cleaned["review"] = (data.get("review") or "").strip()
+    elif not partial:
+        cleaned["review"] = ""
+
+    if "favorite_rank" in data:
+        raw = data.get("favorite_rank")
+        if raw in (None, "", 0):
+            cleaned["favorite_rank"] = None
+        else:
+            try:
+                rank = int(raw)
+            except (TypeError, ValueError):
+                return None, "favorite_rank must be a whole number between 1 and 5."
+            if rank < 1 or rank > 5:
+                return None, "favorite_rank must be between 1 and 5."
+            cleaned["favorite_rank"] = rank
+
+    if "favorite_note" in data:
+        cleaned["favorite_note"] = (data.get("favorite_note") or "").strip()[:120]
+
+    if "tmdb_id" in data:
+        raw_id = data.get("tmdb_id")
+        cleaned["tmdb_id"] = int(raw_id) if raw_id not in (None, "") else None
+
+    if "media_type" in data:
+        mt = (data.get("media_type") or "").strip().lower()
+        cleaned["media_type"] = mt if mt in ("movie", "tv") else None
+
+    if "watched_at" in data:
+        raw_date = (data.get("watched_at") or "").strip()
+        if not raw_date:
+            cleaned["watched_at"] = None
+        else:
+            try:
+                datetime.strptime(raw_date, "%Y-%m-%d")
+            except ValueError:
+                return None, "watched_at must be a date in YYYY-MM-DD format."
+            cleaned["watched_at"] = raw_date
+
+    if "is_rewatch" in data:
+        cleaned["is_rewatch"] = 1 if data.get("is_rewatch") else 0
+
+    if "liked" in data:
+        cleaned["liked"] = 1 if data.get("liked") else 0
+
+    return cleaned, None
+
+
+@app.route("/api/health", methods=["GET"])
+def health():
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/items", methods=["GET"])
+def list_items():
+    db = get_db()
+    status_filter = request.args.get("status")
+    if status_filter and status_filter.lower() != "all":
+        rows = db.execute(
+            "SELECT * FROM items WHERE status = ? ORDER BY created_at DESC, id DESC",
+            (status_filter.lower(),),
+        ).fetchall()
+    else:
+        rows = db.execute(
+            "SELECT * FROM items ORDER BY created_at DESC, id DESC"
+        ).fetchall()
+    return jsonify([row_to_dict(r) for r in rows])
+
+
+@app.route("/api/items", methods=["POST"])
+def create_item():
+    data = request.get_json(silent=True) or {}
+    cleaned, error = validate_payload(data, partial=False)
+    if error:
+        return jsonify({"error": error}), 400
+
+    db = get_db()
+    cursor = db.execute(
+        "INSERT INTO items (title, genre, status, rating, poster_url, review, favorite_rank, favorite_note, tmdb_id, media_type, watched_at, is_rewatch, liked) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            cleaned["title"],
+            cleaned["genre"],
+            cleaned["status"],
+            cleaned["rating"],
+            cleaned["poster_url"],
+            cleaned["review"],
+            cleaned.get("favorite_rank"),
+            cleaned.get("favorite_note", ""),
+            cleaned.get("tmdb_id"),
+            cleaned.get("media_type"),
+            cleaned.get("watched_at"),
+            cleaned.get("is_rewatch", 0),
+            cleaned.get("liked", 0),
+        ),
+    )
+    db.commit()
+    new_row = db.execute("SELECT * FROM items WHERE id = ?", (cursor.lastrowid,)).fetchone()
+    return jsonify(row_to_dict(new_row)), 201
+
+
+@app.route("/api/items/<int:item_id>", methods=["PUT", "PATCH"])
+def update_item(item_id):
+    db = get_db()
+    existing = db.execute("SELECT * FROM items WHERE id = ?", (item_id,)).fetchone()
+    if existing is None:
+        return jsonify({"error": "Item not found."}), 404
+
+    data = request.get_json(silent=True) or {}
+    cleaned, error = validate_payload(data, partial=True)
+    if error:
+        return jsonify({"error": error}), 400
+
+    merged = row_to_dict(existing)
+    merged.update(cleaned)
+
+   # If this item is being assigned a rank (1-5), that rank can only belong
+    # to one item of the same media type at a time — a movie and a TV show
+    # can both hold rank #1 simultaneously, but two movies can't.
+    if "favorite_rank" in cleaned and cleaned["favorite_rank"] is not None:
+        is_tv = merged.get("media_type") == "tv"
+        if is_tv:
+            db.execute(
+                "UPDATE items SET favorite_rank = NULL WHERE favorite_rank = ? AND id != ? AND media_type = 'tv'",
+                (cleaned["favorite_rank"], item_id),
+            )
+        else:
+            db.execute(
+                "UPDATE items SET favorite_rank = NULL WHERE favorite_rank = ? AND id != ? AND (media_type IS NULL OR media_type != 'tv')",
+                (cleaned["favorite_rank"], item_id),
+            )
+
+    db.execute(
+        """UPDATE items SET
+            title = ?, genre = ?, status = ?, rating = ?, poster_url = ?,
+            review = ?, favorite_rank = ?, favorite_note = ?, tmdb_id = ?,
+            media_type = ?, watched_at = ?, is_rewatch = ?, liked = ?
+        WHERE id = ?""",
+        (
+            merged["title"],
+            merged["genre"],
+            merged["status"],
+            merged["rating"],
+            merged["poster_url"],
+            merged["review"],
+            merged["favorite_rank"],
+            merged["favorite_note"],
+            merged["tmdb_id"],
+            merged["media_type"],
+            merged["watched_at"],
+            1 if merged["is_rewatch"] else 0,
+            1 if merged["liked"] else 0,
+            item_id,
+        ),
+    )
+    db.commit()
+    updated_row = db.execute("SELECT * FROM items WHERE id = ?", (item_id,)).fetchone()
+    return jsonify(row_to_dict(updated_row))
+
+
+@app.route("/api/items/<int:item_id>", methods=["DELETE"])
+def delete_item(item_id):
+    db = get_db()
+    existing = db.execute("SELECT * FROM items WHERE id = ?", (item_id,)).fetchone()
+    if existing is None:
+        return jsonify({"error": "Item not found."}), 404
+
+    db.execute("DELETE FROM items WHERE id = ?", (item_id,))
+    db.commit()
+    return jsonify({"deleted": item_id})
+
+
+_genre_cache = {}
+_details_cache = {}
+
+def get_genre_map():
+    if _genre_cache:
+        return _genre_cache
+    if not TMDB_API_KEY:
+        return {}
+    try:
+        for kind in ("movie", "tv"):
+            resp = requests.get(
+                f"{TMDB_BASE}/genre/{kind}/list",
+                params={"api_key": TMDB_API_KEY},
+                timeout=5,
+            )
+            resp.raise_for_status()
+            for genre in resp.json().get("genres", []):
+                _genre_cache[genre["id"]] = genre["name"]
+    except requests.RequestException:
+        pass
+    return _genre_cache
+
+
+@app.route("/api/search-titles", methods=["GET"])
+def search_titles():
+    query = (request.args.get("q") or "").strip()
+    if not query:
+        return jsonify([])
+
+    if not TMDB_API_KEY:
+        return jsonify({"error": "TMDB_API_KEY is not set on the server."}), 500
+
+    try:
+        resp = requests.get(
+            f"{TMDB_BASE}/search/multi",
+            params={"api_key": TMDB_API_KEY, "query": query, "include_adult": "false"},
+            timeout=5,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.RequestException:
+        return jsonify({"error": "Could not reach the movie database."}), 502
+
+    genre_map = get_genre_map()
+    results = []
+    for item in data.get("results", [])[:8]:
+        media_type = item.get("media_type")
+        if media_type not in ("movie", "tv"):
+            continue
+
+        title = item.get("title") or item.get("name") or ""
+        if not title:
+            continue
+
+        date = item.get("release_date") or item.get("first_air_date") or ""
+        year = date[:4] if date else None
+
+        genre_ids = item.get("genre_ids", [])
+        genre_names = [genre_map[gid] for gid in genre_ids if gid in genre_map]
+        is_animation = "Animation" in genre_names
+        is_japanese = item.get("original_language") == "ja"
+
+        if media_type == "tv" and is_animation and is_japanese:
+            kind_label = "Anime"
+        elif media_type == "tv":
+            kind_label = "TV Series"
+        else:
+            kind_label = "Movie"
+
+        poster_path = item.get("poster_path")
+
+        results.append(
+            {
+                "tmdb_id": item.get("id"),
+                "media_type": media_type,
+                "title": title,
+                "year": year,
+                "kind": kind_label,
+                "genre": ", ".join(genre_names[:2]),
+                "poster_url": f"{TMDB_IMAGE_BASE}{poster_path}" if poster_path else "",
+            }
+        )
+
+    return jsonify(results)
+
+@app.route("/api/discover", methods=["GET"])
+def discover():
+    section = (request.args.get("section") or "trending").strip().lower()
+    if section not in ("recommendations", "trending", "upcoming"):
+        return jsonify({"error": "Unknown discovery section."}), 400
+
+    if not TMDB_API_KEY:
+        return jsonify({"error": "TMDB_API_KEY is not set on the server."}), 500
+
+    media_filter = (request.args.get("media_type") or "all").strip().lower()
+    if media_filter not in ("all", "movie", "tv"):
+        media_filter = "all"
+
+    try:
+        frontend_page = int(request.args.get("page", 1))
+        if frontend_page < 1:
+            frontend_page = 1
+    except (TypeError, ValueError):
+        frontend_page = 1
+
+    tmdb_page = math.ceil(frontend_page / 2)
+    is_second_half = (frontend_page % 2 == 0)
+
+    window = (request.args.get("window") or "week").strip().lower()
+    if window not in ("day", "week"):
+        window = "week"
+
+    genre_map = get_genre_map()
+
+    def fetch_kind(kind):
+        endpoint = {
+            "recommendations": f"/discover/{kind}",
+            "trending": f"/trending/{kind}/{window}",
+            "upcoming": "/movie/upcoming" if kind == "movie" else "/tv/on_the_air",
+        }[section]
+        params = {"api_key": TMDB_API_KEY, "language": "en-US", "page": tmdb_page}
+        try:
+            resp = requests.get(f"{TMDB_BASE}{endpoint}", params=params, timeout=5)
+            resp.raise_for_status()
+            return resp.json().get("results", [])
+        except requests.RequestException:
+            return []
+
+    if media_filter == "all":
+        movie_results = fetch_kind("movie")
+        tv_results = fetch_kind("tv")
+        # Interleave movie/tv instead of dumping all movies first, all tv second
+        tagged = []
+        for i in range(max(len(movie_results), len(tv_results))):
+            if i < len(movie_results):
+                tagged.append((movie_results[i], "movie"))
+            if i < len(tv_results):
+                tagged.append((tv_results[i], "tv"))
+        raw_results = tagged
+    else:
+        raw_results = [(r, media_filter) for r in fetch_kind(media_filter)]
+
+    start_idx = 10 if is_second_half else 0
+    sliced = raw_results[start_idx : start_idx + 10]
+
+    results = []
+    for item, kind in sliced:
+        release_date = item.get("release_date") or item.get("first_air_date") or ""
+        genre_ids = item.get("genre_ids", [])
+        genre_names = [genre_map[g] for g in genre_ids if g in genre_map]
+        results.append({
+            "tmdb_id": item.get("id"),
+            "media_type": kind,
+            "title": item.get("title") or item.get("name") or "Untitled",
+            "year": release_date[:4] if release_date else None,
+            "poster_url": f"{TMDB_IMAGE_BASE}{item['poster_path']}" if item.get("poster_path") else "",
+            "vote_average": item.get("vote_average", 0),
+            "genre": ", ".join(genre_names),
+        })
+
+    return jsonify(results)
+
+@app.route("/api/title-details/<int:tmdb_id>", methods=["GET"])
+def title_details(tmdb_id):
+    media_type = (request.args.get("media_type") or "movie").strip().lower()
+    if media_type not in ("movie", "tv"):
+        media_type = "movie"
+
+    cache_key = f"{media_type}:{tmdb_id}"
+    if cache_key in _details_cache:
+        return jsonify(_details_cache[cache_key])
+
+    if not TMDB_API_KEY:
+        return jsonify({"error": "TMDB_API_KEY is not set on the server."}), 500
+
+    try:
+        resp = requests.get(
+            f"{TMDB_BASE}/{media_type}/{tmdb_id}",
+            params={"api_key": TMDB_API_KEY, "append_to_response": "credits"},
+            timeout=5,
+        )
+        if resp.status_code == 404:
+            return jsonify({"error": "Title not found."}), 404
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.RequestException:
+        return jsonify({"error": "Could not reach the movie database."}), 502
+
+    title = data.get("title") or data.get("name") or ""
+    date = data.get("release_date") or data.get("first_air_date") or ""
+    year = date[:4] if date else None
+    genres = [g["name"] for g in data.get("genres", [])]
+    poster_path = data.get("poster_path")
+
+    credits = data.get("credits", {})
+
+    def person_photo(person):
+        path = person.get("profile_path")
+        return f"{TMDB_IMAGE_BASE}{path}" if path else None
+
+    cast = [
+        {"name": c["name"], "photo": person_photo(c)}
+        for c in credits.get("cast", [])[:6]
+    ]
+
+    if media_type == "movie":
+        directors = [
+            {"name": c["name"], "photo": person_photo(c)}
+            for c in credits.get("crew", [])
+            if c.get("job") == "Director"
+        ]
+    else:
+        directors = [
+            {"name": c.get("name"), "photo": person_photo(c)}
+            for c in data.get("created_by", [])
+        ]
+
+    result = {
+        "title": title,
+        "year": year,
+        "genres": genres,
+        "overview": data.get("overview") or "",
+        "poster_url": f"{TMDB_IMAGE_BASE}{poster_path}" if poster_path else "",
+        "directors": directors,
+        "cast": cast,
+        "runtime": data.get("runtime"),
+        "episode_count": data.get("number_of_episodes"),
+        "studios": [
+            company.get("name")
+            for company in data.get("production_companies", [])
+            if company.get("name")
+        ],
+        "vote_average": data.get("vote_average"),
+    }
+    _details_cache[cache_key] = result
+    return jsonify(result)
+
+def episode_log_to_dict(row):
+    return {
+        "id": row["id"],
+        "item_id": row["item_id"],
+        "season_number": row["season_number"],
+        "episode_number": row["episode_number"],
+        "rating": row["rating"],
+        "review": row["review"],
+        "liked": bool(row["liked"]),
+        "watched_at": row["watched_at"],
+        "created_at": row["created_at"],
+    }
+
+
+@app.route("/api/tv/<int:tmdb_id>/seasons", methods=["GET"])
+def tv_seasons(tmdb_id):
+    if not TMDB_API_KEY:
+        return jsonify({"error": "TMDB_API_KEY is not set on the server."}), 500
+    try:
+        resp = requests.get(
+            f"{TMDB_BASE}/tv/{tmdb_id}",
+            params={"api_key": TMDB_API_KEY},
+            timeout=5,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.RequestException:
+        return jsonify({"error": "Could not reach the movie database."}), 502
+
+    seasons = [
+        {
+            "season_number": s["season_number"],
+            "name": s.get("name") or f"Season {s['season_number']}",
+            "episode_count": s.get("episode_count", 0),
+            "poster_url": f"{TMDB_IMAGE_BASE}{s['poster_path']}" if s.get("poster_path") else "",
+        }
+        for s in data.get("seasons", [])
+        if s.get("season_number", 0) > 0  # skip "Specials"
+    ]
+    return jsonify({"seasons": seasons})
+
+
+@app.route("/api/tv/<int:tmdb_id>/season/<int:season_number>", methods=["GET"])
+def tv_season_episodes(tmdb_id, season_number):
+    if not TMDB_API_KEY:
+        return jsonify({"error": "TMDB_API_KEY is not set on the server."}), 500
+    try:
+        resp = requests.get(
+            f"{TMDB_BASE}/tv/{tmdb_id}/season/{season_number}",
+            params={"api_key": TMDB_API_KEY},
+            timeout=5,
+        )
+        if resp.status_code == 404:
+            return jsonify({"error": "Season not found."}), 404
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.RequestException:
+        return jsonify({"error": "Could not reach the movie database."}), 502
+
+    episodes = [
+        {
+            "episode_number": e["episode_number"],
+            "name": e.get("name") or f"Episode {e['episode_number']}",
+            "air_date": e.get("air_date"),
+            "overview": e.get("overview") or "",
+        }
+        for e in data.get("episodes", [])
+    ]
+    return jsonify({"season_number": season_number, "episodes": episodes})
+
+
+@app.route("/api/items/<int:item_id>/episodes", methods=["GET"])
+def list_episode_logs(item_id):
+    db = get_db()
+    rows = db.execute(
+        "SELECT * FROM episode_logs WHERE item_id = ? ORDER BY season_number, episode_number",
+        (item_id,),
+    ).fetchall()
+    return jsonify([episode_log_to_dict(r) for r in rows])
+
+
+@app.route("/api/items/<int:item_id>/episodes/<int:season_number>/<int:episode_number>", methods=["PUT"])
+def upsert_episode_log(item_id, season_number, episode_number):
+    data = request.get_json(silent=True) or {}
+
+    try:
+        rating = int(data.get("rating", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Rating must be a whole number between 0 and 5."}), 400
+    if rating < 0 or rating > 5:
+        return jsonify({"error": "Rating must be between 0 and 5."}), 400
+
+    review = (data.get("review") or "").strip()
+    liked = 1 if data.get("liked") else 0
+
+    raw_date = (data.get("watched_at") or "").strip()
+    if raw_date:
+        try:
+            datetime.strptime(raw_date, "%Y-%m-%d")
+        except ValueError:
+            return jsonify({"error": "watched_at must be a date in YYYY-MM-DD format."}), 400
+        watched_at = raw_date
+    else:
+        watched_at = datetime.now().strftime("%Y-%m-%d")
+
+    db = get_db()
+    existing = db.execute("SELECT id FROM items WHERE id = ?", (item_id,)).fetchone()
+    if existing is None:
+        return jsonify({"error": "Item not found."}), 404
+
+    db.execute(
+        """
+        INSERT INTO episode_logs (item_id, season_number, episode_number, rating, review, liked, watched_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(item_id, season_number, episode_number)
+        DO UPDATE SET rating = excluded.rating, review = excluded.review,
+                      liked = excluded.liked, watched_at = excluded.watched_at
+        """,
+        (item_id, season_number, episode_number, rating, review, liked, watched_at),
+    )
+    db.commit()
+    row = db.execute(
+        "SELECT * FROM episode_logs WHERE item_id = ? AND season_number = ? AND episode_number = ?",
+        (item_id, season_number, episode_number),
+    ).fetchone()
+    return jsonify(episode_log_to_dict(row))
+
+
+@app.route("/api/items/<int:item_id>/episodes/<int:season_number>/<int:episode_number>", methods=["DELETE"])
+def delete_episode_log(item_id, season_number, episode_number):
+    db = get_db()
+    db.execute(
+        "DELETE FROM episode_logs WHERE item_id = ? AND season_number = ? AND episode_number = ?",
+        (item_id, season_number, episode_number),
+    )
+    db.commit()
+    return jsonify({"deleted": True})
+
+@app.route("/api/episode-reviews", methods=["GET"])
+def list_episode_reviews():
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT e.*, i.title, i.poster_url, i.genre
+        FROM episode_logs e
+        JOIN items i ON i.id = e.item_id
+        WHERE e.review != '' OR e.rating > 0
+        ORDER BY COALESCE(e.watched_at, e.created_at) DESC
+        """
+    ).fetchall()
+    return jsonify(
+        [
+            {
+                **episode_log_to_dict(r),
+                "title": r["title"],
+                "poster_url": r["poster_url"],
+                "genre": r["genre"],
+            }
+            for r in rows
+        ]
+    )
+
+@app.route("/api/profile", methods=["GET"])
+def get_profile():
+    db = get_db()
+    row = db.execute("SELECT * FROM profile WHERE id = 1").fetchone()
+    return jsonify({
+        "name": row["name"],
+        "bio": row["bio"],
+        "avatar": row["avatar"],
+        "pinned_favorites": normalize_pinned_favorites(row["pinned_favorites"]),
+    })
+
+
+@app.route("/api/profile", methods=["PATCH"])
+def update_profile():
+    data = request.get_json(silent=True) or {}
+    db = get_db()
+    row = db.execute("SELECT * FROM profile WHERE id = 1").fetchone()
+
+    name = (data.get("name") if "name" in data else row["name"]) or "Movie Lover"
+    bio = (data.get("bio") if "bio" in data else row["bio"]) or ""
+    avatar = (data.get("avatar") if "avatar" in data else row["avatar"]) or "🎬"
+    pinned_favorites = normalize_pinned_favorites(
+        data.get("pinned_favorites") if "pinned_favorites" in data else row["pinned_favorites"]
+    )
+
+    payload = {
+        "name": name.strip()[:60],
+        "bio": bio.strip()[:200],
+        "avatar": avatar.strip()[:3_000_000],
+        "pinned_favorites": pinned_favorites,
+    }
+
+    db.execute(
+        "UPDATE profile SET name = ?, bio = ?, avatar = ?, pinned_favorites = ? WHERE id = 1",
+        (payload["name"], payload["bio"], payload["avatar"], json.dumps(payload["pinned_favorites"])),
+    )
+    db.commit()
+    return jsonify(payload)
+
+
+@app.route("/api/profile/talent", methods=["GET"])
+def profile_talent():
+    if not TMDB_API_KEY:
+        return jsonify({"directors": [], "actors": []})
+
+    db = get_db()
+    rows = db.execute(
+        "SELECT id, title, tmdb_id, media_type FROM items WHERE tmdb_id IS NOT NULL ORDER BY created_at DESC"
+    ).fetchall()
+
+    if not rows:
+        return jsonify({"directors": [], "actors": []})
+
+    director_map = {}
+    actor_map = {}
+
+    for r in rows:
+        media_type = r["media_type"] or "movie"
+        try:
+            resp = requests.get(
+                f"{TMDB_BASE}/{media_type}/{r['tmdb_id']}",
+                params={"api_key": TMDB_API_KEY, "append_to_response": "credits"},
+                timeout=5,
+            )
+            if resp.status_code != 200:
+                continue
+            data = resp.json()
+        except requests.RequestException:
+            continue
+
+        title = data.get("title") or data.get("name") or r["title"]
+        credits = data.get("credits", {})
+
+        for person in credits.get("crew", []) or []:
+            if person.get("job") != "Director" or not person.get("name"):
+                continue
+            name = person["name"]
+            entry = director_map.setdefault(name, {"name": name, "photo": None, "count": 0, "titles": []})
+            entry["count"] += 1
+            entry["titles"] = list(dict.fromkeys(entry["titles"] + [title]))
+            if not entry["photo"] and person.get("profile_path"):
+                entry["photo"] = f"{TMDB_IMAGE_BASE}{person['profile_path']}"
+
+        for person in credits.get("cast", []) or []:
+            if not person.get("name"):
+                continue
+            name = person["name"]
+            entry = actor_map.setdefault(name, {"name": name, "photo": None, "count": 0, "titles": []})
+            entry["count"] += 1
+            entry["titles"] = list(dict.fromkeys(entry["titles"] + [title]))
+            if not entry["photo"] and person.get("profile_path"):
+                entry["photo"] = f"{TMDB_IMAGE_BASE}{person['profile_path']}"
+
+    def to_response(mapping):
+        values = []
+        for value in mapping.values():
+            if value["count"] < 2:
+                continue
+            values.append({
+                "name": value["name"],
+                "photo": value["photo"],
+                "count": value["count"],
+                "titles": value["titles"],
+            })
+        values.sort(key=lambda item: (-item["count"], item["name"].lower()))
+        return values[:5]
+
+    return jsonify({"directors": to_response(director_map), "actors": to_response(actor_map)})
+
+
+
+if __name__ == "__main__":
+    init_db()
+    app.run(debug=True, host="0.0.0.0", port=5000)
+</file>
+
+<file path="frontend/src/components/DiscoverPage.jsx">
+import { useEffect, useMemo, useState } from "react";
+import { api } from "../api.js";
+
+function LoadingRail({ title }) {
+  return (
+    <section
+      className="feature-section discovery-loading-rail"
+      aria-label={`Loading ${title}`}
+    >
+      <div className="feature-section__heading">
+        <h2>{title}</h2>
+        <span className="discovery-loading-label">Loading</span>
+      </div>
+      <div className="discovery-grid discovery-grid--scroll">
+        {[1, 2, 3, 4, 5, 6].map((placeholder) => (
+          <div className="discovery-skeleton" key={placeholder} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function Feed({
+  title,
+  items,
+  onAdd,
+  watchlistKeys,
+  headingExtra,
+  compact = false,
+  onLoadMore,
+  loadingMore,
+}) {
+  if (!items.length)
+    return <p className="empty-state">Nothing to show right now.</p>;
+  return (
+    <section className="feature-section">
+      <div className="feature-section__heading">
+        <div className="discovery-heading-title">
+          <h2>{title}</h2>
+          {headingExtra}
+        </div>
+        <span>{items.length} titles</span>
+      </div>
+      <div className="discovery-grid discovery-grid--scroll">
+        {items.map((item) => {
+          const key = `${item.media_type}-${item.tmdb_id}`;
+          const added = watchlistKeys.has(key);
+          return (
+            <article
+              className={`discovery-card ${compact ? "discovery-card--compact" : ""}`}
+              key={key}
+            >
+              <div className="discovery-card__poster-wrap">
+                {item.poster_url ? (
+                  <img
+                    src={item.poster_url}
+                    alt=""
+                    className="discovery-card__poster-img"
+                  />
+                ) : (
+                  <div className="discovery-card__poster discovery-card__poster--empty">
+                    🎬
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className={`discovery-card__add ${added ? "discovery-card__add--added" : ""}`}
+                  disabled={added}
+                  onClick={() => onAdd(item)}
+                  aria-label={
+                    added ? "Already in watchlist" : "Add to watchlist"
+                  }
+                  title={added ? "Already in watchlist" : "Add to watchlist"}
+                >
+                  {added ? "✓" : "+"}
+                </button>
+                {item.vote_average > 0 && (
+                  <span
+                    className="discovery-card__score"
+                    title="TMDB community rating"
+                  >
+                    ★ {item.vote_average.toFixed(1)}
+                  </span>
+                )}
+                {item.year && (
+                  <span className="discovery-card__year-pill">{item.year}</span>
+                )}
+              </div>
+              <div className="discovery-card__body">
+                <h3>{item.title}</h3>
+                <p className="discovery-card__date">
+                  {item.release_date
+                    ? new Date(
+                        `${item.release_date}T12:00:00`,
+                      ).toLocaleDateString(undefined, {
+                        month: "long",
+                        day: "numeric",
+                        year: "numeric",
+                      })
+                    : item.year || "Release date unknown"}
+                </p>
+                <span className="discovery-card__type">
+                  {item.media_type === "tv" ? "TV show" : "Movie"}
+                </span>
+                {item.reason && (
+                  <small className="discovery-card__reason">
+                    {item.reason}
+                  </small>
+                )}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+      <button
+        className="discovery-load-more"
+        type="button"
+        onClick={onLoadMore}
+        disabled={loadingMore}
+      >
+        {loadingMore ? "Loading..." : "Load more"}
+      </button>
+    </section>
+  );
+}
+
+export default function DiscoverPage({ items, onAdd }) {
+  const [feeds, setFeeds] = useState({
+    recommendations: [],
+    trending: [],
+    upcoming: [],
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [mediaType, setMediaType] = useState("all");
+  const [releaseYear, setReleaseYear] = useState("all");
+  const [trendingWindow, setTrendingWindow] = useState("week");
+  const [pages, setPages] = useState({
+    recommendations: 1,
+    trending: 1,
+    upcoming: 1,
+  });
+  const [loadingMore, setLoadingMore] = useState("");
+  const watchlistKeys = useMemo(
+    () =>
+      new Set(
+        items
+          .filter((item) => item.tmdb_id)
+          .map((item) => `${item.media_type || "movie"}-${item.tmdb_id}`),
+      ),
+    [items],
+  );
+  const topGenres = useMemo(() => {
+    const counts = {};
+    items.forEach((item) =>
+      (item.genre || "").split(",").forEach((genre) => {
+        const key = genre.trim();
+        if (key) counts[key] = (counts[key] || 0) + (item.rating || 1);
+      }),
+    );
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([genre]) => genre)
+      .join(",");
+  }, [items]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.discover("recommendations", topGenres).then((data) => {
+      if (!cancelled) {
+        setFeeds((f) => ({ ...f, recommendations: data }));
+        setPages((p) => ({ ...p, recommendations: 1 }));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [topGenres]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([
+      api.discover("trending", "", trendingWindow),
+      api.discover("upcoming"),
+    ])
+      .then(([trending, upcoming]) => {
+        if (!cancelled) {
+          setFeeds((f) => ({ ...f, trending, upcoming }));
+          setPages((p) => ({ ...p, trending: 1, upcoming: 1 }));
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [trendingWindow]);
+
+  const years = useMemo(
+    () =>
+      [
+        ...new Set(
+          Object.values(feeds)
+            .flat()
+            .map((item) => item.year)
+
+            .filter(Boolean),
+        ),
+      ].sort((a, b) => b - a),
+    [feeds],
+  );
+  const filterItems = (feed) =>
+    feed.filter(
+      (item) =>
+        (mediaType === "all" || item.media_type === mediaType) &&
+        (releaseYear === "all" || item.year === releaseYear),
+    );
+  async function loadMore(section) {
+    setLoadingMore(section);
+    const nextPage = pages[section] + 1;
+    try {
+      const more = await api.discover(
+        section,
+        section === "recommendations" ? topGenres : "",
+        trendingWindow,
+        nextPage,
+      );
+
+      if (!Array.isArray(more) || more.length === 0) {
+        return;
+      }
+
+      setFeeds((current) => ({
+        ...current,
+        [section]: more,
+      }));
+
+      setPages((current) => ({ ...current, [section]: nextPage }));
+    } catch (err) {
+      setError(`Failed to load additional titles: ${err.message}`);
+    } finally {
+      setLoadingMore("");
+    }
+  }
+  return (
+    <div className="feature-page">
+      <header className="feature-page__intro">
+        <span className="feature-page__eyebrow">
+          <span className="feature-page__eyebrow-dot" />
+          Discover
+        </span>
+        <h1 className="feature-page__headline">
+          Discover your <span>next favorite</span>
+        </h1>
+        <p className="feature-page__lede">
+          Personalized picks shaped by your favorites and genre habits,
+          alongside what's moving now.
+        </p>
+      </header>
+      <div className="discovery-filters" aria-label="Recommendation filters">
+        <span className="discovery-filters__label">Show</span>
+        {[
+          ["all", "Everything"],
+          ["movie", "Movies"],
+          ["tv", "TV shows"],
+        ].map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            className={mediaType === value ? "active" : ""}
+            onClick={() => setMediaType(value)}
+          >
+            {label}
+          </button>
+        ))}
+        <label>
+          <span className="sr-only">Release year</span>
+          <select
+            value={releaseYear}
+            onChange={(event) => setReleaseYear(event.target.value)}
+          >
+            <option value="all">Any year</option>
+            {years.map((year) => (
+              <option key={year} value={year}>
+                {year}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {error && <p className="banner banner--error">{error}</p>}
+      {loading && (
+        <div className="discovery-loading-state" aria-live="polite">
+          <LoadingRail title="Trending" />
+          <LoadingRail title="Picked for you" />
+        </div>
+      )}
+      {!loading && !error && (
+        <>
+          <Feed
+            title="Trending"
+            compact
+            headingExtra={
+              <div
+                className="trending-toggle"
+                role="group"
+                aria-label="Trending period"
+              >
+                <button
+                  className={trendingWindow === "day" ? "active" : ""}
+                  onClick={() => setTrendingWindow("day")}
+                  type="button"
+                >
+                  Today
+                </button>
+                <button
+                  className={trendingWindow === "week" ? "active" : ""}
+                  onClick={() => setTrendingWindow("week")}
+                  type="button"
+                >
+                  This Week
+                </button>
+              </div>
+            }
+            items={filterItems(feeds.trending)}
+            onAdd={onAdd}
+            watchlistKeys={watchlistKeys}
+            onLoadMore={() => loadMore("trending")}
+            loadingMore={loadingMore === "trending"}
+          />
+          <Feed
+            title="Picked for you"
+            compact
+            items={filterItems(feeds.recommendations)}
+            onAdd={onAdd}
+            watchlistKeys={watchlistKeys}
+            onLoadMore={() => loadMore("recommendations")}
+            loadingMore={loadingMore === "recommendations"}
+          />
+          <Feed
+            title="Top Sci-Fi"
+            items={filterItems(
+              feeds.trending.filter((item) =>
+                (item.genre || "").toLowerCase().includes("sci-fi"),
+              ),
+            )}
+            onAdd={onAdd}
+            watchlistKeys={watchlistKeys}
+            onLoadMore={() => loadMore("trending")}
+            loadingMore={loadingMore === "trending"}
+          />
+          <Feed
+            title="Upcoming releases"
+            items={filterItems(feeds.upcoming)}
+            onAdd={onAdd}
+            watchlistKeys={watchlistKeys}
+            onLoadMore={() => loadMore("upcoming")}
+            loadingMore={loadingMore === "upcoming"}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+</file>
+
+<file path="frontend/src/components/Topfive.jsx">
+const RANKS = [1, 2, 3, 4, 5];
+
+export default function TopFive({ items, onOpenDetails, mediaType = "movie", title }) {
+  const byRank = {};
+  for (const item of items) {
+    const itemType = item.media_type === "tv" ? "tv" : "movie";
+    if (itemType !== mediaType) continue;
+    if (item.favorite_rank) byRank[item.favorite_rank] = item;
+  }
+
+  return (
+    <section className="top-five">
+      <div className="top-five__header">
+        <h2>{title || (mediaType === "tv" ? "5 Favorite TV Shows" : "5 Favorite Films")}</h2>
+      </div>
+
+      <div className="top-five__shelf">
+        {RANKS.map((rank) => {
+          const item = byRank[rank];
+          return (
+            <div className="top-five__slot" key={rank}>
+              <span className="top-five__rank">{rank}</span>
+
+              {item ? (
+                <>
+                  <div className="top-five__poster-wrap">
+                    <button
+                      className="top-five__poster-btn"
+                      onClick={() => onOpenDetails(item)}
+                      aria-label={`View details for ${item.title}`}
+                      title="View details"
+                    >
+                      {item.poster_url ? (
+                        <img
+                          src={item.poster_url}
+                          alt=""
+                          className="top-five__poster"
+                        />
+                      ) : (
+                        <div className="top-five__poster top-five__poster--empty">
+                          {mediaType === "tv" ? "📺" : "🎬"}
+                        </div>
+                      )}
+                    </button>
+                  </div>
+                  <p className="top-five__title">{item.title}</p>
+                </>
+              ) : (
+                <div className="top-five__poster top-five__poster--placeholder">
+                  +
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+</file>
+
+<file path="frontend/src/App.jsx">
+import { useEffect, useMemo, useState } from "react";
+import { api } from "./api.js";
+import FilterTabs from "./components/FilterTabs.jsx";
+import AddItemForm from "./components/AddItemForm.jsx";
+import WatchlistItem from "./components/WatchlistItem.jsx";
+import TopFive from "./components/Topfive.jsx";
+import TitleDetailModal from "./components/TitleDetailModal.jsx";
+import PosterGrid from "./components/PosterGrid.jsx";
+import ReviewsPage from "./components/ReviewsPage.jsx";
+import StatsPage from "./components/StatsPage.jsx";
+import ProfilePage from "./components/ProfilePage.jsx";
+import DiscoverPage from "./components/DiscoverPage.jsx";
+import CollectionsPage from "./components/CollectionsPage.jsx";
+import DiaryPage from "./components/DiaryPage.jsx";
+import GenreDropdown from "./components/GenreDropdown.jsx";
+
+export default function App() {
+  const [items, setItems] = useState([]);
+  const [filter, setFilter] = useState("all");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [detailItem, setDetailItem] = useState(null);
+  const [page, setPage] = useState("watchlist");
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [listQuery, setListQuery] = useState("");
+  const [listGenre, setListGenre] = useState("all");
+
+  // Wraps a state update in the browser's View Transitions API when
+  // available, so switching tabs/filters crossfades smoothly instead of
+  // the page snapping instantly to its new height/content.
+  function smoothly(update) {
+    if (document.startViewTransition) {
+      document.startViewTransition(update);
+    } else {
+      update();
+    }
+  }
+
+  function changeFilter(next) {
+    smoothly(() => setFilter(next));
+  }
+
+  function changePage(next) {
+    smoothly(() => setPage(next));
+    setShowMenu(false);
+  }
+
+  function scrollToSection(id) {
+    document.getElementById(id)?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+    setShowMenu(false);
+  }
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    api
+      .list()
+      .then((data) => {
+        if (!cancelled) setItems(data);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    function updateScrollState() {
+      setShowBackToTop(window.scrollY > 520);
+    }
+
+    updateScrollState();
+    window.addEventListener("scroll", updateScrollState, { passive: true });
+    return () => window.removeEventListener("scroll", updateScrollState);
+  }, []);
+
+  const counts = useMemo(() => {
+    const c = {
+      all: items.length,
+      watching: 0,
+      "plan to watch": 0,
+      completed: 0,
+    };
+    for (const item of items) c[item.status] = (c[item.status] || 0) + 1;
+    return c;
+  }, [items]);
+
+  const visibleItems = useMemo(() => {
+    if (filter === "all") return items;
+    return items.filter((item) => item.status === filter);
+  }, [items, filter]);
+
+  const listGenres = useMemo(() => {
+    const genres = new Set();
+    items.forEach((item) =>
+      (item.genre || "")
+        .split(",")
+        .map((genre) => genre.trim())
+        .filter(Boolean)
+        .forEach((genre) => genres.add(genre)),
+    );
+    return [...genres].sort((a, b) => a.localeCompare(b));
+  }, [items]);
+
+  const searchedItems = useMemo(() => {
+    const query = listQuery.trim().toLowerCase();
+    return visibleItems.filter((item) => {
+      const matchesQuery =
+        !query ||
+        item.title.toLowerCase().includes(query) ||
+        (item.genre || "").toLowerCase().includes(query);
+      const matchesGenre =
+        listGenre === "all" ||
+        (item.genre || "")
+          .split(",")
+          .map((genre) => genre.trim().toLowerCase())
+          .includes(listGenre.toLowerCase());
+      return matchesQuery && matchesGenre;
+    });
+  }, [listGenre, listQuery, visibleItems]);
+
+  async function handleAdd(form) {
+    const normalizedTitle = form.title.trim().toLowerCase();
+    const isDuplicate = items.some((it) => {
+      if (
+        form.tmdb_id &&
+        it.tmdb_id &&
+        it.tmdb_id === form.tmdb_id &&
+        it.media_type === form.media_type
+      ) {
+        return true;
+      }
+      return it.title.trim().toLowerCase() === normalizedTitle;
+    });
+    if (isDuplicate) {
+      throw new Error(`"${form.title.trim()}" is already on your list.`);
+    }
+    const created = await api.create(form);
+    setItems((prev) => [created, ...prev]);
+  }
+  async function handleUpdate(id, changes) {
+    const previous = items;
+    setItems((prev) =>
+      prev.map((it) => (it.id === id ? { ...it, ...changes } : it)),
+    );
+    try {
+      await api.update(id, changes);
+      if ("favorite_rank" in changes) {
+        const fresh = await api.list();
+        setItems(fresh);
+      }
+    } catch (err) {
+      setItems(previous);
+      setError(err.message);
+    }
+  }
+
+  async function handleDelete(id) {
+    const previous = items;
+    setItems((prev) => prev.filter((it) => it.id !== id));
+    try {
+      await api.remove(id);
+    } catch (err) {
+      setItems(previous);
+      setError(err.message);
+    }
+  }
+
+  return (
+    <div className="page">
+      <header className="masthead">
+        <div className="masthead__title-group">
+          <h1>Watchlist</h1>
+          <p>Everything you're watching, want to watch, or already loved.</p>
+        </div>
+      </header>
+
+      <nav className="page-nav" aria-label="Main navigation">
+        <div className="page-nav__links">
+          {[
+            { key: "watchlist", label: "Watchlist" },
+            { key: "discover", label: "Discover" },
+            { key: "collections", label: "Collections" },
+            { key: "diary", label: "Diary" },
+            { key: "reviews", label: "Reviews" },
+            { key: "stats", label: "Stats" },
+            { key: "profile", label: "Profile" },
+          ].map((p) => (
+            <button
+              key={p.key}
+              className={`page-nav__btn ${page === p.key ? "page-nav__btn--active" : ""}`}
+              onClick={() => changePage(p.key)}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="page-nav__menu-wrap">
+          <button
+            className="page-nav__menu-btn"
+            onClick={() => setShowMenu((open) => !open)}
+            aria-label="Open more navigation"
+            aria-expanded={showMenu}
+            aria-haspopup="menu"
+          >
+            <span aria-hidden="true">☰</span>
+          </button>
+          {showMenu && (
+            <div className="page-nav__menu" role="menu">
+              <button
+                role="menuitem"
+                onClick={() => scrollToSection("top-five")}
+              >
+                Top 5 favorites
+              </button>
+              <button
+                role="menuitem"
+                onClick={() => scrollToSection("add-movie")}
+              >
+                Add a movie
+              </button>
+              <button
+                role="menuitem"
+                onClick={() => {
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                  setShowMenu(false);
+                }}
+              >
+                Back to top
+              </button>
+            </div>
+          )}
+        </div>
+      </nav>
+
+      <main className="content">
+        {error && (
+          <p className="banner banner--error">
+            {error} — make sure the backend is running on port 5000.
+          </p>
+        )}
+
+        {page === "watchlist" && (
+          <>
+            <div id="top-five">
+              <TopFive
+                items={items}
+                mediaType="movie"
+                title="5 Favorite Films"
+                onOpenDetails={setDetailItem}
+              />
+            </div>
+
+            <div id="top-five-tv">
+              <TopFive
+                items={items}
+                mediaType="tv"
+                title="5 Favorite TV Shows"
+                onOpenDetails={setDetailItem}
+              />
+            </div>
+
+            <div id="add-movie">
+              <AddItemForm onAdd={handleAdd} />
+            </div>
+
+            <FilterTabs
+              active={filter}
+              onChange={changeFilter}
+              counts={counts}
+            />
+
+            <div className="list-toolbar">
+              <label className="list-toolbar__search">
+                <span className="sr-only">Search your watchlist</span>
+                <span aria-hidden="true">⌕</span>
+                <input
+                  type="search"
+                  placeholder="Search titles or genres"
+                  value={listQuery}
+                  onChange={(e) => setListQuery(e.target.value)}
+                />
+              </label>
+              <GenreDropdown
+                value={listGenre}
+                onChange={setListGenre}
+                genres={listGenres}
+              />
+            </div>
+
+            {loading ? (
+              <p className="empty-state">Loading your shelf…</p>
+            ) : searchedItems.length === 0 ? (
+              <div className="empty-state">
+                <p>
+                  {visibleItems.length === 0
+                    ? filter === "all"
+                      ? "Nothing on the shelf yet. Add the first title."
+                      : `Nothing in "${filter}" yet.`
+                    : "No titles match those filters."}
+                </p>
+              </div>
+            ) : filter === "all" ? (
+              <ul className="ticket-list">
+                {searchedItems.map((item) => (
+                  <WatchlistItem
+                    key={item.id}
+                    item={item}
+                    onUpdate={handleUpdate}
+                    onDelete={handleDelete}
+                    onOpenDetails={setDetailItem}
+                  />
+                ))}
+              </ul>
+            ) : (
+              <PosterGrid items={searchedItems} onOpenDetails={setDetailItem} />
+            )}
+          </>
+        )}
+
+        {page === "reviews" && (
+          <ReviewsPage
+            items={items}
+            onOpenDetails={setDetailItem}
+            onUpdate={handleUpdate}
+            onDelete={handleDelete}
+          />
+        )}
+
+        {page === "discover" && (
+          <DiscoverPage items={items} onAdd={handleAdd} />
+        )}
+
+        {page === "collections" && <CollectionsPage items={items} />}
+
+        {page === "diary" && (
+          <DiaryPage items={items} onOpenDetails={setDetailItem} />
+        )}
+
+        {page === "stats" && (
+          <StatsPage items={items} onOpenDetails={setDetailItem} />
+        )}
+
+        {page === "profile" && (
+          <ProfilePage items={items} onOpenDetails={setDetailItem} />
+        )}
+      </main>
+
+      {detailItem && (
+        <TitleDetailModal
+          item={detailItem}
+          onClose={() => setDetailItem(null)}
+          onBackfill={(id, tmdb_id, media_type) =>
+            handleUpdate(id, { tmdb_id, media_type })
+          }
+        />
+      )}
+
+      {showBackToTop && (
+        <button
+          className="back-to-top"
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          aria-label="Back to top"
+          title="Back to top"
+        >
+          <span aria-hidden="true">↑</span>
+          <span>Top</span>
+        </button>
+      )}
+    </div>
+  );
+}
 </file>
 
 </files>

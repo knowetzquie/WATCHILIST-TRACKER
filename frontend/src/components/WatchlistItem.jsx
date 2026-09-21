@@ -1,6 +1,8 @@
 import { useState } from "react";
 import StarRating from "./StarRating.jsx";
 import LogEntryModal from "./LogEntryModal.jsx";
+import EpisodeTrackerModal from "./EpisodeTrackerModal.jsx";
+import RankDropdown from "./RankDropdown.jsx";
 
 export default function WatchlistItem({
   item,
@@ -10,6 +12,7 @@ export default function WatchlistItem({
 }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [showLogModal, setShowLogModal] = useState(false);
+  const [showEpisodeTracker, setShowEpisodeTracker] = useState(false);
   const watchedLabel = item.watched_at
     ? `Watched ${new Date(item.watched_at).toLocaleDateString(undefined, {
         month: "short",
@@ -45,35 +48,41 @@ export default function WatchlistItem({
                 <p className="ticket__title" title={item.title}>
                   {item.title}
                 </p>
-                {item.genre && <p className="ticket__genre">{item.genre}</p>}
+                {item.genre && (
+                  <p className="ticket__genre" title={item.genre}>
+                    {item.genre}
+                  </p>
+                )}
                 <div className="ticket__meta" aria-label={watchedLabel}>
                   {item.liked && <span title="Liked">♥</span>}
                   <span>{watchedLabel}</span>
+                </div>
+                <div className="ticket__actions">
+                  <button
+                    className="btn btn--tiny ticket__log-btn"
+                    onClick={() => setShowLogModal(true)}
+                    title="Open diary entry"
+                  >
+                    ✎ Log
+                  </button>
+                  {item.media_type === "tv" && (
+                    <button
+                      className="btn btn--tiny ticket__log-btn"
+                      onClick={() => setShowEpisodeTracker(true)}
+                      title="Track episodes"
+                    >
+                      📺 Episodes
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
 
             <div className="ticket__controls">
-              <select
-                className={`favorite-select ${
-                  item.favorite_rank ? "favorite-select--active" : ""
-                }`}
-                value={item.favorite_rank || ""}
-                onChange={(e) =>
-                  onUpdate(item.id, {
-                    favorite_rank:
-                      e.target.value === "" ? null : Number(e.target.value),
-                  })
-                }
-                title="Top 5 of All Time"
-              >
-                <option value="">☆ Top 5</option>
-                <option value="1">★ #1</option>
-                <option value="2">★ #2</option>
-                <option value="3">★ #3</option>
-                <option value="4">★ #4</option>
-                <option value="5">★ #5</option>
-              </select>
+              <RankDropdown
+                value={item.favorite_rank}
+                onChange={(rank) => onUpdate(item.id, { favorite_rank: rank })}
+              />
 
               <div className="ticket__status-badge">
                 {item.status === "plan to watch"
@@ -115,14 +124,6 @@ export default function WatchlistItem({
                   ✕
                 </button>
               )}
-
-              <button
-                className="btn btn--tiny ticket__log-btn"
-                onClick={() => setShowLogModal(true)}
-                title="Open diary entry"
-              >
-                ✎ Log
-              </button>
             </div>
           </div>
         </div>
@@ -138,6 +139,12 @@ export default function WatchlistItem({
           onDelete={() => {
             onDelete(item.id);
           }}
+        />
+      )}
+      {showEpisodeTracker && (
+        <EpisodeTrackerModal
+          item={item}
+          onClose={() => setShowEpisodeTracker(false)}
         />
       )}
     </li>

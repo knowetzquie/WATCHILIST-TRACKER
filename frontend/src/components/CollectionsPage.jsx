@@ -15,10 +15,18 @@ export default function CollectionsPage({ items }) {
   const [collections, setCollections] = useState(() => read(STORAGE_KEY, []));
   const [challenges, setChallenges] = useState(() => read(CHALLENGE_KEY, []));
   const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
   const [challengeName, setChallengeName] = useState("");
   const [challengeGoal, setChallengeGoal] = useState(10);
+  const [openPickerId, setOpenPickerId] = useState(null);
+  const [pickerQuery, setPickerQuery] = useState("");
+
   const completed = useMemo(
     () => items.filter((item) => item.status === "completed"),
+    [items],
+  );
+  const itemsById = useMemo(
+    () => new Map(items.map((item) => [item.id, item])),
     [items],
   );
 
@@ -34,12 +42,28 @@ export default function CollectionsPage({ items }) {
   function createCollection(event) {
     event.preventDefault();
     const title = name.trim();
-    if (!title) return;
+    const summary = description.trim();
+    if (!title || !summary) return;
     setCollections((current) => [
       ...current,
-      { id: crypto.randomUUID(), name: title, itemIds: [] },
+      {
+        id: crypto.randomUUID(),
+        name: title,
+        description: summary,
+        itemIds: [],
+      },
     ]);
     setName("");
+    setDescription("");
+  }
+  function deleteCollection(collectionId) {
+    setCollections((current) =>
+      current.filter((collection) => collection.id !== collectionId),
+    );
+    if (openPickerId === collectionId) {
+      setOpenPickerId(null);
+      setPickerQuery("");
+    }
   }
   function toggleItem(collectionId, itemId) {
     setCollections((current) =>
@@ -55,6 +79,12 @@ export default function CollectionsPage({ items }) {
       ),
     );
   }
+  function togglePicker(collectionId) {
+    setOpenPickerId((current) =>
+      current === collectionId ? null : collectionId,
+    );
+    setPickerQuery("");
+  }
   function createChallenge(event) {
     event.preventDefault();
     const title = challengeName.trim();
@@ -66,13 +96,23 @@ export default function CollectionsPage({ items }) {
     setChallengeName("");
     setChallengeGoal(10);
   }
+  function deleteChallenge(challengeId) {
+    setChallenges((current) =>
+      current.filter((challenge) => challenge.id !== challengeId),
+    );
+  }
 
   return (
     <div className="feature-page">
       <header className="feature-page__intro">
-        <p className="eyebrow">Collections</p>
-        <h1>Build your own shelves</h1>
-        <p>
+        <span className="feature-page__eyebrow">
+          <span className="feature-page__eyebrow-dot" />
+          Collections
+        </span>
+        <h1 className="feature-page__headline">
+          Build your <span>own shelves</span>
+        </h1>
+        <p className="feature-page__lede">
           Group titles by mood, theme, director, or the challenge you are
           chasing.
         </p>
@@ -83,38 +123,157 @@ export default function CollectionsPage({ items }) {
             <h2>Themed playlists</h2>
             <span>{collections.length}</span>
           </div>
-          <form className="inline-create" onSubmit={createCollection}>
+          <form
+            className="inline-create inline-create--stacked"
+            onSubmit={createCollection}
+          >
             <input
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder="Mind-bending thrillers"
               aria-label="Collection name"
             />
-            <button type="submit">Create list</button>
+            <textarea
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              placeholder="What ties this list together? e.g. Twisty plots that mess with your head."
+              aria-label="Collection description"
+              rows={2}
+            />
+            <button
+              type="submit"
+              disabled={!name.trim() || !description.trim()}
+            >
+              Create list
+            </button>
           </form>
           {collections.length === 0 ? (
             <p className="empty-state">Create your first collection.</p>
           ) : (
-            collections.map((collection) => (
-              <article className="collection-card" key={collection.id}>
-                <div>
-                  <h3>{collection.name}</h3>
-                  <span>{collection.itemIds.length} titles</span>
-                </div>
-                <div className="collection-card__items">
-                  {items.map((item) => (
-                    <label key={item.id}>
+            collections.map((collection) => {
+              const isOpen = openPickerId === collection.id;
+              const query = pickerQuery.trim().toLowerCase();
+              const filteredItems = isOpen
+                ? items.filter((item) =>
+                    item.title.toLowerCase().includes(query),
+                  )
+                : [];
+              return (
+                <article className="collection-card" key={collection.id}>
+                  <div>
+                    <h3>{collection.name}</h3>
+                    <div className="collection-card__meta-actions">
+                      <span>{collection.itemIds.length} titles</span>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        aria-label={`Delete ${collection.name}`}
+                        title="Delete collection"
+                        onClick={() => deleteCollection(collection.id)}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                  {collection.description && (
+                    <p className="collection-card__desc">
+                      {collection.description}
+                    </p>
+                  )}
+
+                  {collection.itemIds.length > 0 && (
+                    <div className="poster-chip-row">
+                      {collection.itemIds.map((itemId) => {
+                        const item = itemsById.get(itemId);
+                        if (!item) return null;
+                        return (
+                          <div className="poster-chip" key={itemId}>
+                            {item.poster_url ? (
+                              <img src={item.poster_url} alt="" />
+                            ) : (
+                              <div className="poster-chip__empty">🎬</div>
+                            )}
+                            <button
+                              type="button"
+                              className="poster-chip__remove"
+                              aria-label={`Remove ${item.title} from ${collection.name}`}
+                              title={`Remove ${item.title}`}
+                              onClick={() => toggleItem(collection.id, itemId)}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    className={
+                      isOpen
+                        ? "collection-card__add-btn is-open"
+                        : "collection-card__add-btn"
+                    }
+                    onClick={() => togglePicker(collection.id)}
+                  >
+                    {isOpen ? "Done" : "+ Add titles"}
+                  </button>
+
+                  {isOpen && (
+                    <div className="collection-picker">
                       <input
-                        type="checkbox"
-                        checked={collection.itemIds.includes(item.id)}
-                        onChange={() => toggleItem(collection.id, item.id)}
-                      />{" "}
-                      {item.title}
-                    </label>
-                  ))}
-                </div>
-              </article>
-            ))
+                        className="collection-picker__search"
+                        value={pickerQuery}
+                        onChange={(event) => setPickerQuery(event.target.value)}
+                        placeholder="Search your titles"
+                        aria-label={`Search titles to add to ${collection.name}`}
+                        autoFocus
+                      />
+                      <div className="collection-picker__list">
+                        {filteredItems.length === 0 ? (
+                          <p className="collection-picker__empty">
+                            No titles match “{pickerQuery}”.
+                          </p>
+                        ) : (
+                          filteredItems.map((item) => {
+                            const added = collection.itemIds.includes(item.id);
+                            return (
+                              <button
+                                type="button"
+                                key={item.id}
+                                className="collection-picker__row"
+                                onClick={() =>
+                                  toggleItem(collection.id, item.id)
+                                }
+                              >
+                                {item.poster_url ? (
+                                  <img
+                                    src={item.poster_url}
+                                    alt=""
+                                    className="collection-picker__thumb"
+                                  />
+                                ) : (
+                                  <div className="collection-picker__thumb--empty">
+                                    🎬
+                                  </div>
+                                )}
+                                <span className="collection-picker__title">
+                                  {item.title}
+                                </span>
+                                <span className="collection-picker__mark">
+                                  {added ? "✓" : "+"}
+                                </span>
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </article>
+              );
+            })
           )}
         </section>
         <section className="feature-section">
@@ -147,9 +306,20 @@ export default function CollectionsPage({ items }) {
                 <article className="challenge-card" key={challenge.id}>
                   <div>
                     <h3>{challenge.name}</h3>
-                    <strong>
-                      {progress} / {challenge.goal}
-                    </strong>
+                    <div className="challenge-card__meta-actions">
+                      <strong>
+                        {progress} / {challenge.goal}
+                      </strong>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        aria-label={`Delete ${challenge.name}`}
+                        title="Delete challenge"
+                        onClick={() => deleteChallenge(challenge.id)}
+                      >
+                        ✕
+                      </button>
+                    </div>
                   </div>
                   <div className="challenge-card__track">
                     <span

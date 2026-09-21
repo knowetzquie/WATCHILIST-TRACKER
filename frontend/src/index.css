@@ -292,9 +292,7 @@ select {
   background: #1c1338;
   color: var(--gold);
 }
-
-.list-toolbar__search input,
-.list-toolbar__genre select {
+.list-toolbar__search input {
   width: 100%;
   border: 0;
   outline: 0;
@@ -307,25 +305,8 @@ select {
 .list-toolbar__search input {
   padding: 0.58rem 0;
 }
-.list-toolbar__search:focus-within,
-.list-toolbar__genre:focus-within {
+.list-toolbar__search:focus-within {
   border-color: var(--gold);
-}
-
-.list-toolbar__genre {
-  width: 145px;
-  flex-shrink: 0;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 0.58rem 0.7rem;
-  background: #1c1338;
-}
-
-.list-toolbar__genre select {
-  cursor: pointer;
-}
-.list-toolbar__genre option {
-  background: var(--espresso);
 }
 
 .sr-only {
@@ -424,6 +405,9 @@ select {
 }
 
 @media (max-width: 560px) {
+  .list-toolbar__genre {
+    width: 100%;
+  }
   .index-card__row--fields {
     grid-template-columns: 1fr;
   }
@@ -758,6 +742,13 @@ select {
   background-color: var(--status-completed);
 }
 
+.ticket__actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+  flex-wrap: wrap;
+}
+
 .ticket__inner {
   flex: 1;
   display: flex;
@@ -772,6 +763,7 @@ select {
   justify-content: space-between;
   gap: 1rem;
   padding: 0.9rem 1.1rem;
+  flex-wrap: nowrap;
 }
 
 .ticket__main {
@@ -826,6 +818,9 @@ select {
   margin: 0.15rem 0 0;
   font-size: 0.8rem;
   color: var(--text-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ticket__meta {
@@ -846,8 +841,9 @@ select {
   display: flex;
   align-items: center;
   gap: 0.9rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 .ticket__status-badge {
@@ -863,30 +859,49 @@ select {
 }
 
 .favorite-select {
-  border: 1px solid var(--gold);
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid rgba(192, 132, 252, 0.28);
   border-radius: 6px;
-  padding: 0.35rem 0.5rem;
+  padding: 0.35rem 1.7rem 0.35rem 0.6rem;
   font-size: 0.8rem;
-  background: #1c1338;
-  color: var(--accent-dark);
   font-weight: 600;
+  color: var(--accent-dark);
   cursor: pointer;
+  background-color: #1c1338;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5 7.5l5 5 5-5' fill='none' stroke='%23c084fc' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.45rem center;
+  background-size: 12px;
+}
+
+.favorite-select:hover,
+.favorite-select:focus-visible {
+  outline: 0;
+  border-color: rgba(192, 132, 252, 0.6);
 }
 
 .favorite-select--active {
-  background: rgba(192, 132, 252, 0.18);
-  box-shadow: 0 0 0 1px rgba(192, 132, 252, 0.15);
+  background-color: #1c1338;
+}
+
+.favorite-select option {
+  background: #1c1338;
+  color: #e4c8ff;
+  font-size: 14px;
+  padding: 6px 10px;
 }
 
 .ticket__log-btn {
-  border: 1px solid var(--accent-dark);
-  background: rgba(168, 85, 247, 0.16);
+  border: 1px solid rgba(192, 132, 252, 0.22);
+  background: transparent;
   color: #e4c8ff;
   white-space: nowrap;
 }
 
 .ticket__log-btn:hover {
-  background: var(--accent-dark);
+  background: rgba(168, 85, 247, 0.18);
+  border-color: rgba(192, 132, 252, 0.5);
   color: #fff;
 }
 
@@ -4286,13 +4301,21 @@ select {
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(circle at 88% 0%, rgba(139, 92, 246, 0.18), transparent 42%),
+    radial-gradient(
+      circle at 88% 0%,
+      rgba(139, 92, 246, 0.18),
+      transparent 42%
+    ),
     radial-gradient(circle at 0% 100%, rgba(56, 189, 248, 0.1), transparent 45%);
 }
 
 .feature-page__intro h1 {
   margin: 0.35rem 0 0.6rem;
-  font-family: "Plus Jakarta Sans", "Inter", -apple-system, sans-serif;
+  font-family:
+    "Plus Jakarta Sans",
+    "Inter",
+    -apple-system,
+    sans-serif;
   font-weight: 800;
   letter-spacing: -0.02em;
   font-size: clamp(2rem, 5vw, 3.5rem);
@@ -4317,7 +4340,9 @@ select {
   border: none;
   background: transparent;
   border-radius: 999px;
-  transition: background 0.18s ease, color 0.18s ease;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease;
 }
 
 .discovery-filters button.active {
@@ -4333,12 +4358,16 @@ select {
 
 .discovery-card__poster-wrap {
   border-radius: 14px; /* rounded-xl equivalent */
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
 .discovery-card:hover .discovery-card__poster-wrap {
   transform: scale(1.05) translateY(-4px);
-  box-shadow: 0 0 0 1px rgba(168, 85, 247, 0.5), var(--shadow);
+  box-shadow:
+    0 0 0 1px rgba(168, 85, 247, 0.5),
+    var(--shadow);
 }
 
 .discovery-card__year-pill {
@@ -4379,7 +4408,11 @@ select {
   width: 260px;
   height: 260px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(168, 85, 247, 0.35), transparent 70%);
+  background: radial-gradient(
+    circle,
+    rgba(168, 85, 247, 0.35),
+    transparent 70%
+  );
   filter: blur(10px);
   pointer-events: none;
 }
@@ -4410,7 +4443,11 @@ select {
   position: relative;
   z-index: 1;
   margin: 0 0 0.5rem;
-  font-family: "Plus Jakarta Sans", "Inter", -apple-system, sans-serif;
+  font-family:
+    "Plus Jakarta Sans",
+    "Inter",
+    -apple-system,
+    sans-serif;
   font-weight: 800;
   letter-spacing: -0.02em;
   font-size: clamp(1.8rem, 4.5vw, 3rem);
@@ -4418,7 +4455,12 @@ select {
 }
 
 .feature-page__headline span {
-  background: linear-gradient(90deg, var(--accent), var(--accent-dark) 60%, #38bdf8);
+  background: linear-gradient(
+    90deg,
+    var(--accent),
+    var(--accent-dark) 60%,
+    #38bdf8
+  );
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -4438,4 +4480,829 @@ select {
   .feature-page__intro {
     padding: 1.25rem 1.25rem;
   }
+}
+
+/* ---------- TV SHOWS MODAL ---------- */
+
+.modal--episodes {
+  max-width: 620px;
+}
+
+.episode-tracker__title {
+  margin: 0 0 1rem;
+  padding-right: 2rem;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 1.2rem;
+}
+
+.episode-tracker__season-select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.episode-tracker__season-select label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  color: var(--text-soft);
+}
+
+.episode-tracker__season-select select {
+  border: 1px solid var(--card-edge);
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+  background: #1c1338;
+  color: var(--text);
+}
+.episode-tracker__summary {
+  font-size: 0.8rem;
+  color: var(--accent-dark);
+  font-weight: 700;
+}
+
+.episode-tracker__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 55vh;
+  overflow-y: auto;
+}
+
+.episode-row {
+  border: 1px solid var(--card-edge);
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.episode-row--watched {
+  border-color: var(--accent-dark);
+}
+
+.episode-row__toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.6rem 0.8rem;
+  background: none;
+  border: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.episode-row__check {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--card-edge);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-soft);
+}
+
+.episode-row--watched .episode-row__check {
+  background: var(--accent-dark);
+  border-color: var(--accent-dark);
+  color: #fff;
+}
+
+.episode-row__info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.episode-row__title {
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.episode-row__meta {
+  font-size: 0.72rem;
+  color: var(--gold);
+}
+
+.episode-row__editor {
+  padding: 0.75rem 0.9rem 0.9rem;
+  border-top: 1px solid var(--card-edge);
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.episode-row__field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text-soft);
+}
+
+.episode-row__field input {
+  border: 1px solid var(--card-edge);
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+  background: var(--espresso);
+  color: var(--text);
+  color-scheme: dark;
+}
+
+.episode-row__stars {
+  display: flex;
+  gap: 0.15rem;
+}
+
+.episode-row__stars button {
+  background: none;
+  border: none;
+  font-size: 1.15rem;
+  color: var(--gold);
+  cursor: pointer;
+  padding: 0.1rem;
+}
+
+.episode-row__editor textarea {
+  width: 100%;
+  min-height: 60px;
+  border: 1px solid var(--card-edge);
+  border-radius: 6px;
+  padding: 0.5rem;
+  background: var(--espresso);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+  resize: vertical;
+}
+
+.episode-row__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+/* ---------- Genre dropdown ---------- */
+
+.genre-dd {
+  position: relative;
+  width: 160px;
+  flex-shrink: 0;
+}
+
+.genre-dd__trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.58rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #1c1338;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.genre-dd__trigger:hover {
+  border-color: var(--accent-dark);
+}
+
+.genre-dd__trigger:focus-visible,
+.genre-dd--open .genre-dd__trigger {
+  outline: 0;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(192, 132, 252, 0.18);
+}
+
+.genre-dd--filtered .genre-dd__trigger {
+  background: rgba(192, 132, 252, 0.14);
+  border-color: var(--accent-dark);
+}
+
+.genre-dd__value {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.genre-dd__chevron {
+  flex-shrink: 0;
+  color: var(--gold);
+  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.genre-dd--open .genre-dd__chevron {
+  transform: rotate(180deg);
+}
+
+.genre-dd__menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 60;
+  min-width: 100%;
+  width: max-content;
+  max-width: 260px;
+  max-height: 264px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0.35rem;
+  list-style: none;
+  border: 1px solid var(--card-edge);
+  border-radius: 10px;
+  background: rgba(28, 19, 56, 0.96);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  box-shadow:
+    0 18px 40px rgba(6, 2, 20, 0.55),
+    0 0 0 1px rgba(192, 132, 252, 0.08);
+
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-6px) scale(0.97);
+  transform-origin: top right;
+  transition:
+    opacity 0.18s ease,
+    transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1),
+    visibility 0s linear 0.2s;
+
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.genre-dd--open .genre-dd__menu {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+  transition-delay: 0s;
+}
+
+.genre-dd__menu::-webkit-scrollbar {
+  display: none;
+}
+
+.genre-dd__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  color: var(--text-soft);
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+}
+
+.genre-dd__option--active {
+  background: rgba(192, 132, 252, 0.16);
+  color: var(--text);
+}
+
+.genre-dd__option--selected {
+  color: var(--gold);
+  font-weight: 600;
+}
+
+.genre-dd__option svg {
+  flex-shrink: 0;
+}
+
+@media (max-width: 560px) {
+  .genre-dd {
+    width: 100%;
+  }
+
+  .genre-dd__menu {
+    left: 0;
+    right: 0;
+    width: auto;
+    max-width: none;
+    transform-origin: top center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .genre-dd__menu,
+  .genre-dd__chevron {
+    transition: none;
+  }
+}
+
+.season-meta {
+  margin-left: 0.6rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-soft);
+  letter-spacing: 0;
+}
+
+.season-episodes {
+  list-style: none;
+  margin: 0.75rem 0 0.5rem;
+  padding: 0.1rem 0 0.1rem 0.9rem;
+  border-left: 2px solid var(--card-edge);
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  animation: seasonOpen 0.22s ease-out both;
+}
+
+@keyframes seasonOpen {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.season-episodes__head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.season-episodes__ep {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--gold);
+  min-width: 2rem;
+}
+
+.season-episodes__actions {
+  display: flex;
+  gap: 0.35rem;
+  margin-left: auto;
+}
+
+.season-episodes__text {
+  margin: 0.3rem 0 0;
+  font-size: 0.85rem;
+  font-style: italic;
+  color: var(--text-soft);
+  line-height: 1.45;
+}
+
+.season-episodes__text--clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* keep poster pinned to the top of the card */
+.review-card {
+  align-items: flex-start;
+}
+
+.review-card__poster-btn {
+  align-self: flex-start;
+}
+
+/* let the text column shrink and wrap long words */
+.review-card__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.review-card__text,
+.season-episodes__text {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* ---------- Rank (Top 5) dropdown ---------- */
+
+.rank-dd__trigger {
+  min-width: 88px;
+  text-align: left;
+}
+
+.rank-dd__menu {
+  z-index: 200;
+  margin: 0;
+  padding: 0.35rem;
+  list-style: none;
+  border: 1px solid var(--card-edge);
+  border-radius: 10px;
+  background: rgba(28, 19, 56, 0.97);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  box-shadow:
+    0 18px 40px rgba(6, 2, 20, 0.55),
+    0 0 0 1px rgba(192, 132, 252, 0.08);
+  transform-origin: top left;
+  animation: rankDdIn 0.18s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.rank-dd__menu--up {
+  transform-origin: bottom left;
+}
+
+@keyframes rankDdIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.rank-dd__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: var(--text-soft);
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+}
+
+.rank-dd__option--active {
+  background: rgba(192, 132, 252, 0.16);
+  color: var(--text);
+}
+
+.rank-dd__option--selected {
+  color: var(--gold);
+  font-weight: 600;
+}
+
+/* ---------- Generic select dropdown ---------- */
+
+.select-dd__trigger {
+  width: 100%;
+  min-width: 150px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+  font: inherit;
+  font-size: 0.95rem;
+  color: var(--text);
+  background: #1c1338;
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.select-dd__trigger:hover {
+  border-color: var(--accent-dark);
+}
+
+.select-dd__trigger:focus-visible,
+.select-dd__trigger--open {
+  outline: 0;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(192, 132, 252, 0.18);
+}
+
+.select-dd__value {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.select-dd__chevron {
+  flex-shrink: 0;
+  color: var(--gold);
+  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.select-dd__trigger--open .select-dd__chevron {
+  transform: rotate(180deg);
+}
+
+/* ---------- collections part ---------- */
+
+.inline-create {
+  align-items: stretch;
+}
+
+.inline-create input {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+  background: #1c1338;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.inline-create input:focus {
+  outline: 0;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(192, 132, 252, 0.18);
+}
+
+.inline-create input::placeholder {
+  color: var(--text-soft);
+  opacity: 0.7;
+}
+
+.inline-create button {
+  width: auto;
+  flex-shrink: 0;
+  margin-top: 0;
+  padding: 0.6rem 1rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+}
+
+/* ---------- Collections page: poster chips + searchable add-picker ----------
+   Appended for the Collections redesign. Scoped to .collection-card,
+   .challenge-card and .collection-picker so nothing else is affected. */
+
+.collection-card__meta-actions,
+.challenge-card__meta-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.icon-btn {
+  border: 0;
+  background: transparent;
+  color: var(--text-soft);
+  cursor: pointer;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0.2rem 0.35rem;
+  border-radius: 4px;
+}
+
+.icon-btn:hover {
+  color: #fca5a5;
+  background: rgba(252, 165, 165, 0.12);
+}
+
+.poster-chip-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(34px, 1fr));
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+}
+
+.poster-chip {
+  position: relative;
+}
+
+.poster-chip img,
+.poster-chip__empty {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: 4px;
+  background: var(--espresso);
+  display: block;
+}
+
+.poster-chip__empty {
+  display: grid;
+  place-items: center;
+  font-size: 0.8rem;
+}
+
+.poster-chip__remove {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 15px;
+  height: 15px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(12, 8, 24, 0.9);
+  color: white;
+  font-size: 0.5rem;
+  line-height: 1;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  opacity: 0;
+  transform: scale(0.85);
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease;
+}
+
+.poster-chip:hover .poster-chip__remove,
+.poster-chip:focus-within .poster-chip__remove {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.poster-chip__remove:hover {
+  background: var(--accent-dark);
+}
+
+.poster-chip__remove:focus-visible {
+  opacity: 1;
+  transform: scale(1);
+  outline: 2px solid var(--gold);
+  outline-offset: 1px;
+}
+
+@media (hover: none) {
+  /* Touch devices can't hover, so keep the remove control reachable. */
+  .poster-chip__remove {
+    opacity: 1;
+    transform: none;
+    background: rgba(12, 8, 24, 0.75);
+  }
+}
+
+.collection-card__desc {
+  margin: 0.35rem 0 0;
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.inline-create--stacked {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.inline-create--stacked textarea {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.55rem 0.75rem;
+  background: #1c1338;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  resize: vertical;
+  min-height: 2.5rem;
+}
+
+.inline-create--stacked textarea:focus {
+  outline: 0;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(192, 132, 252, 0.18);
+}
+
+.inline-create--stacked textarea::placeholder {
+  color: var(--text-soft);
+  opacity: 0.7;
+}
+
+.inline-create--stacked button {
+  align-self: flex-end;
+}
+
+.inline-create--stacked button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.collection-card__add-btn {
+  display: block;
+  width: 100%;
+  margin-top: 0.75rem;
+  border: 1px solid var(--card-edge);
+  border-radius: 999px;
+  padding: 0.42rem 0.6rem;
+  background: transparent;
+  color: var(--text-soft);
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+.collection-card__add-btn:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.collection-card__add-btn.is-open {
+  border-color: var(--accent-dark);
+  color: var(--accent-dark);
+}
+
+.collection-picker {
+  margin-top: 0.6rem;
+}
+
+.collection-picker__search {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--card-edge);
+  border-radius: 5px;
+  padding: 0.42rem 0.55rem;
+  background: var(--espresso);
+  color: var(--text);
+  font-size: 0.8rem;
+}
+
+.collection-picker__search:focus {
+  outline: 0;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(192, 132, 252, 0.18);
+}
+
+.collection-picker__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.collection-picker__row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0.3rem 0.25rem;
+  border-radius: 5px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text);
+  font-size: 0.8rem;
+}
+
+.collection-picker__row:hover {
+  background: var(--espresso);
+}
+
+.collection-picker__thumb,
+.collection-picker__thumb--empty {
+  width: 28px;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: 3px;
+  background: var(--espresso);
+  flex-shrink: 0;
+}
+
+.collection-picker__thumb--empty {
+  display: grid;
+  place-items: center;
+  font-size: 0.7rem;
+}
+
+.collection-picker__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collection-picker__mark {
+  flex-shrink: 0;
+  width: 1.1rem;
+  text-align: center;
+  color: var(--accent-dark);
+  font-weight: 700;
+}
+
+.collection-picker__empty {
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  padding: 0.4rem 0.25rem;
+  margin: 0;
 }

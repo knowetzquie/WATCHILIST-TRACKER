@@ -97,6 +97,23 @@ def init_db():
 
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS episode_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_id INTEGER NOT NULL,
+            season_number INTEGER NOT NULL,
+            episode_number INTEGER NOT NULL,
+            rating INTEGER NOT NULL DEFAULT 0,
+            review TEXT NOT NULL DEFAULT '',
+            liked INTEGER NOT NULL DEFAULT 0,
+            watched_at TEXT DEFAULT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(item_id, season_number, episode_number),
+            FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
+        )
+        """
+    )
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS profile (
             id INTEGER PRIMARY KEY CHECK (id = 1),
             name TEXT NOT NULL DEFAULT 'Movie Lover',
@@ -602,6 +619,168 @@ def title_details(tmdb_id):
     _details_cache[cache_key] = result
     return jsonify(result)
 
+def episode_log_to_dict(row):
+    return {
+        "id": row["id"],
+        "item_id": row["item_id"],
+        "season_number": row["season_number"],
+        "episode_number": row["episode_number"],
+        "rating": row["rating"],
+        "review": row["review"],
+        "liked": bool(row["liked"]),
+        "watched_at": row["watched_at"],
+        "created_at": row["created_at"],
+    }
+
+
+@app.route("/api/tv/<int:tmdb_id>/seasons", methods=["GET"])
+def tv_seasons(tmdb_id):
+    if not TMDB_API_KEY:
+        return jsonify({"error": "TMDB_API_KEY is not set on the server."}), 500
+    try:
+        resp = requests.get(
+            f"{TMDB_BASE}/tv/{tmdb_id}",
+            params={"api_key": TMDB_API_KEY},
+            timeout=5,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.RequestException:
+        return jsonify({"error": "Could not reach the movie database."}), 502
+
+    seasons = [
+        {
+            "season_number": s["season_number"],
+            "name": s.get("name") or f"Season {s['season_number']}",
+            "episode_count": s.get("episode_count", 0),
+            "poster_url": f"{TMDB_IMAGE_BASE}{s['poster_path']}" if s.get("poster_path") else "",
+        }
+        for s in data.get("seasons", [])
+        if s.get("season_number", 0) > 0  # skip "Specials"
+    ]
+    return jsonify({"seasons": seasons})
+
+
+@app.route("/api/tv/<int:tmdb_id>/season/<int:season_number>", methods=["GET"])
+def tv_season_episodes(tmdb_id, season_number):
+    if not TMDB_API_KEY:
+        return jsonify({"error": "TMDB_API_KEY is not set on the server."}), 500
+    try:
+        resp = requests.get(
+            f"{TMDB_BASE}/tv/{tmdb_id}/season/{season_number}",
+            params={"api_key": TMDB_API_KEY},
+            timeout=5,
+        )
+        if resp.status_code == 404:
+            return jsonify({"error": "Season not found."}), 404
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.RequestException:
+        return jsonify({"error": "Could not reach the movie database."}), 502
+
+    episodes = [
+        {
+            "episode_number": e["episode_number"],
+            "name": e.get("name") or f"Episode {e['episode_number']}",
+            "air_date": e.get("air_date"),
+            "overview": e.get("overview") or "",
+        }
+        for e in data.get("episodes", [])
+    ]
+    return jsonify({"season_number": season_number, "episodes": episodes})
+
+
+@app.route("/api/items/<int:item_id>/episodes", methods=["GET"])
+def list_episode_logs(item_id):
+    db = get_db()
+    rows = db.execute(
+        "SELECT * FROM episode_logs WHERE item_id = ? ORDER BY season_number, episode_number",
+        (item_id,),
+    ).fetchall()
+    return jsonify([episode_log_to_dict(r) for r in rows])
+
+
+@app.route("/api/items/<int:item_id>/episodes/<int:season_number>/<int:episode_number>", methods=["PUT"])
+def upsert_episode_log(item_id, season_number, episode_number):
+    data = request.get_json(silent=True) or {}
+
+    try:
+        rating = int(data.get("rating", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Rating must be a whole number between 0 and 5."}), 400
+    if rating < 0 or rating > 5:
+        return jsonify({"error": "Rating must be between 0 and 5."}), 400
+
+    review = (data.get("review") or "").strip()
+    liked = 1 if data.get("liked") else 0
+
+    raw_date = (data.get("watched_at") or "").strip()
+    if raw_date:
+        try:
+            datetime.strptime(raw_date, "%Y-%m-%d")
+        except ValueError:
+            return jsonify({"error": "watched_at must be a date in YYYY-MM-DD format."}), 400
+        watched_at = raw_date
+    else:
+        watched_at = datetime.now().strftime("%Y-%m-%d")
+
+    db = get_db()
+    existing = db.execute("SELECT id FROM items WHERE id = ?", (item_id,)).fetchone()
+    if existing is None:
+        return jsonify({"error": "Item not found."}), 404
+
+    db.execute(
+        """
+        INSERT INTO episode_logs (item_id, season_number, episode_number, rating, review, liked, watched_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(item_id, season_number, episode_number)
+        DO UPDATE SET rating = excluded.rating, review = excluded.review,
+                      liked = excluded.liked, watched_at = excluded.watched_at
+        """,
+        (item_id, season_number, episode_number, rating, review, liked, watched_at),
+    )
+    db.commit()
+    row = db.execute(
+        "SELECT * FROM episode_logs WHERE item_id = ? AND season_number = ? AND episode_number = ?",
+        (item_id, season_number, episode_number),
+    ).fetchone()
+    return jsonify(episode_log_to_dict(row))
+
+
+@app.route("/api/items/<int:item_id>/episodes/<int:season_number>/<int:episode_number>", methods=["DELETE"])
+def delete_episode_log(item_id, season_number, episode_number):
+    db = get_db()
+    db.execute(
+        "DELETE FROM episode_logs WHERE item_id = ? AND season_number = ? AND episode_number = ?",
+        (item_id, season_number, episode_number),
+    )
+    db.commit()
+    return jsonify({"deleted": True})
+
+@app.route("/api/episode-reviews", methods=["GET"])
+def list_episode_reviews():
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT e.*, i.title, i.poster_url, i.genre
+        FROM episode_logs e
+        JOIN items i ON i.id = e.item_id
+        WHERE e.review != '' OR e.rating > 0
+        ORDER BY COALESCE(e.watched_at, e.created_at) DESC
+        """
+    ).fetchall()
+    return jsonify(
+        [
+            {
+                **episode_log_to_dict(r),
+                "title": r["title"],
+                "poster_url": r["poster_url"],
+                "genre": r["genre"],
+            }
+            for r in rows
+        ]
+    )
+
 @app.route("/api/profile", methods=["GET"])
 def get_profile():
     db = get_db()
@@ -710,6 +889,8 @@ def profile_talent():
         return values[:5]
 
     return jsonify({"directors": to_response(director_map), "actors": to_response(actor_map)})
+
+
 
 if __name__ == "__main__":
     init_db()
