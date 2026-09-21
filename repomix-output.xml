@@ -83,6 +83,71 @@ README.md
 <files>
 This section contains the contents of the repository's files.
 
+<file path="backend/requirements.txt">
+Flask==3.0.3
+Flask-Cors==4.0.1
+
+ 
+requests==2.32.3
+python-dotenv==1.0.1
+</file>
+
+<file path="frontend/public/manifest.webmanifest">
+{
+  "name": "Watchlist Tracker",
+  "short_name": "Watchlist",
+  "description": "Track, rate, and discover your favorite movies and TV shows.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#150c2e",
+  "theme_color": "#150c2e",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
+</file>
+
+<file path="frontend/public/sw.js">
+const CACHE_NAME = "watchlist-shell-v1";
+const APP_SHELL = ["/", "/index.html", "/manifest.webmanifest"];
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)),
+  );
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches
+      .keys()
+      .then((keys) =>
+        Promise.all(
+          keys
+            .filter((key) => key !== CACHE_NAME)
+            .map((key) => caches.delete(key)),
+        ),
+      ),
+  );
+  self.clients.claim();
+});
+
+self.addEventListener("fetch", (event) => {
+  if (event.request.method !== "GET") return;
+
+  event.respondWith(
+    fetch(event.request).catch(() => caches.match(event.request)),
+  );
+});
+</file>
+
 <file path="frontend/src/components/EpisodeTrackerModal.jsx">
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
@@ -331,6 +396,48 @@ export default function EpisodeTrackerModal({ item, onClose }) {
 }
 </file>
 
+<file path="frontend/src/components/FilterTabs.jsx">
+const TABS = [
+  { key: "all", label: "All" },
+  { key: "watching", label: "Watching" },
+  { key: "plan to watch", label: "WatchList" },
+  { key: "completed", label: "Completed" },
+];
+
+export default function FilterTabs({ active, onChange, counts }) {
+  return (
+    <div className="tabs-wrap">
+      <div className="tabs">
+        {TABS.map((tab) => (
+          <button
+            key={tab.key}
+            className={`tab ${active === tab.key ? "tab--active" : ""}`}
+            onClick={() => onChange(tab.key)}
+          >
+            {tab.label}
+            <span className="tab__count">{counts[tab.key] ?? 0}</span>
+          </button>
+        ))}
+      </div>
+      <div className="status-legend" aria-label="Status colors">
+        <span>
+          <i className="status-legend__swatch status-legend__swatch--plan" />{" "}
+          Plan to Watch
+        </span>
+        <span>
+          <i className="status-legend__swatch status-legend__swatch--watching" />{" "}
+          Watching
+        </span>
+        <span>
+          <i className="status-legend__swatch status-legend__swatch--completed" />{" "}
+          Completed
+        </span>
+      </div>
+    </div>
+  );
+}
+</file>
+
 <file path="frontend/src/components/GenreDropdown.jsx">
 import { useEffect, useId, useRef, useState } from "react";
 
@@ -491,1102 +598,6 @@ export default function GenreDropdown({ value, onChange, genres }) {
           </li>
         ))}
       </ul>
-    </div>
-  );
-}
-</file>
-
-<file path="frontend/src/components/RankDropdown.jsx">
-import { useEffect, useId, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-
-const OPTIONS = [
-  { value: null, label: "☆ No rank" },
-  { value: 1, label: "★ #1" },
-  { value: 2, label: "★ #2" },
-  { value: 3, label: "★ #3" },
-  { value: 4, label: "★ #4" },
-  { value: 5, label: "★ #5" },
-];
-
-export default function RankDropdown({ value, onChange }) {
-  const [open, setOpen] = useState(false);
-  const [active, setActive] = useState(0);
-  const [pos, setPos] = useState(null);
-  const triggerRef = useRef(null);
-  const menuRef = useRef(null);
-  const listId = useId();
-
-  const current = value || null;
-  const selectedIndex = Math.max(
-    0,
-    OPTIONS.findIndex((o) => o.value === current),
-  );
-
-  const openMenu = () => {
-    const r = triggerRef.current.getBoundingClientRect();
-    const menuHeight = 250;
-    const flipUp =
-      window.innerHeight - r.bottom < menuHeight && r.top > menuHeight;
-    setPos(
-      flipUp
-        ? { bottom: window.innerHeight - r.top + 6, left: r.left, width: r.width, up: true }
-        : { top: r.bottom + 6, left: r.left, width: r.width, up: false },
-    );
-    setActive(selectedIndex);
-    setOpen(true);
-  };
-
-  const close = () => setOpen(false);
-
-  const choose = (i) => {
-    onChange(OPTIONS[i].value);
-    close();
-    triggerRef.current?.focus();
-  };
-
-  // close on outside click, scroll, resize
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e) => {
-      if (
-        !triggerRef.current?.contains(e.target) &&
-        !menuRef.current?.contains(e.target)
-      ) {
-        close();
-      }
-    };
-    document.addEventListener("pointerdown", onDown);
-    window.addEventListener("scroll", close, true);
-    window.addEventListener("resize", close);
-    return () => {
-      document.removeEventListener("pointerdown", onDown);
-      window.removeEventListener("scroll", close, true);
-      window.removeEventListener("resize", close);
-    };
-  }, [open]);
-
-  const onKeyDown = (e) => {
-    if (!open) {
-      if (["ArrowDown", "ArrowUp", "Enter", " "].includes(e.key)) {
-        e.preventDefault();
-        openMenu();
-      }
-      return;
-    }
-    switch (e.key) {
-      case "ArrowDown":
-        e.preventDefault();
-        setActive((i) => Math.min(i + 1, OPTIONS.length - 1));
-        break;
-      case "ArrowUp":
-        e.preventDefault();
-        setActive((i) => Math.max(i - 1, 0));
-        break;
-      case "Enter":
-      case " ":
-        e.preventDefault();
-        choose(active);
-        break;
-      case "Escape":
-      case "Tab":
-        close();
-        break;
-      default:
-    }
-  };
-
-  const triggerLabel = current ? `★ #${current}` : "☆ Top 5";
-
-  return (
-    <>
-      <button
-        type="button"
-        ref={triggerRef}
-        className={`favorite-select rank-dd__trigger ${
-          current ? "favorite-select--active" : ""
-        }`}
-        onClick={() => (open ? close() : openMenu())}
-        onKeyDown={onKeyDown}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-controls={listId}
-        title="Top 5 of All Time"
-      >
-        {triggerLabel}
-      </button>
-
-      {open &&
-        pos &&
-        createPortal(
-          <ul
-            id={listId}
-            ref={menuRef}
-            role="listbox"
-            className={`rank-dd__menu ${pos.up ? "rank-dd__menu--up" : ""}`}
-            style={{
-              position: "fixed",
-              top: pos.top,
-              bottom: pos.bottom,
-              left: pos.left,
-              minWidth: Math.max(pos.width, 120),
-            }}
-          >
-            {OPTIONS.map((o, i) => (
-              <li
-                key={String(o.value)}
-                role="option"
-                aria-selected={o.value === current}
-                className={`rank-dd__option ${
-                  i === active ? "rank-dd__option--active" : ""
-                } ${o.value === current ? "rank-dd__option--selected" : ""}`}
-                onMouseEnter={() => setActive(i)}
-                onClick={() => choose(i)}
-              >
-                <span>{o.label}</span>
-                {o.value === current && (
-                  <svg width="14" height="14" viewBox="0 0 20 20" aria-hidden="true">
-                    <path
-                      d="M4 10.5l4 4 8-9"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                )}
-              </li>
-            ))}
-          </ul>,
-          document.body,
-        )}
-    </>
-  );
-}
-</file>
-
-<file path="frontend/src/components/SelectDropdown.jsx">
-import { useEffect, useId, useRef, useState } from "react";
-import { createPortal } from "react-dom";
-
-/**
- * Generic custom select.
- * options: [{ value: "plan to watch", label: "Plan to Watch" }, ...]
- */
-export default function SelectDropdown({
-  value,
-  onChange,
-  options,
-  ariaLabel,
-  className = "",
-}) {
-  const [open, setOpen] = useState(false);
-  const [active, setActive] = useState(0);
-  const [pos, setPos] = useState(null);
-  const triggerRef = useRef(null);
-  const menuRef = useRef(null);
-  const listId = useId();
-
-  const selectedIndex = Math.max(
-    0,
-    options.findIndex((o) => o.value === value),
-  );
-  const selected = options[selectedIndex];
-
-  const close = () => setOpen(false);
-
-  const openMenu = () => {
-    const r = triggerRef.current.getBoundingClientRect();
-    const menuHeight = options.length * 38 + 20;
-    const flipUp =
-      window.innerHeight - r.bottom < menuHeight && r.top > menuHeight;
-    setPos(
-      flipUp
-        ? {
-            bottom: window.innerHeight - r.top + 6,
-            left: r.left,
-            width: r.width,
-            up: true,
-          }
-        : { top: r.bottom + 6, left: r.left, width: r.width, up: false },
-    );
-    setActive(selectedIndex);
-    setOpen(true);
-  };
-
-  const choose = (i) => {
-    onChange(options[i].value);
-    close();
-    triggerRef.current?.focus();
-  };
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e) => {
-      if (
-        !triggerRef.current?.contains(e.target) &&
-        !menuRef.current?.contains(e.target)
-      ) {
-        close();
-      }
-    };
-    document.addEventListener("pointerdown", onDown);
-    window.addEventListener("scroll", close, true);
-    window.addEventListener("resize", close);
-    return () => {
-      document.removeEventListener("pointerdown", onDown);
-      window.removeEventListener("scroll", close, true);
-      window.removeEventListener("resize", close);
-    };
-  }, [open]);
-
-  const onKeyDown = (e) => {
-    if (!open) {
-      if (["ArrowDown", "ArrowUp", "Enter", " "].includes(e.key)) {
-        e.preventDefault();
-        openMenu();
-      }
-      return;
-    }
-    switch (e.key) {
-      case "ArrowDown":
-        e.preventDefault();
-        setActive((i) => Math.min(i + 1, options.length - 1));
-        break;
-      case "ArrowUp":
-        e.preventDefault();
-        setActive((i) => Math.max(i - 1, 0));
-        break;
-      case "Enter":
-      case " ":
-        e.preventDefault();
-        choose(active);
-        break;
-      case "Escape":
-      case "Tab":
-        close();
-        break;
-      default:
-    }
-  };
-
-  return (
-    <>
-      <button
-        type="button"
-        ref={triggerRef}
-        className={`select-dd__trigger ${open ? "select-dd__trigger--open" : ""} ${className}`}
-        onClick={() => (open ? close() : openMenu())}
-        onKeyDown={onKeyDown}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-controls={listId}
-        aria-label={ariaLabel}
-      >
-        <span className="select-dd__value">{selected?.label}</span>
-        <svg
-          className="select-dd__chevron"
-          width="14"
-          height="14"
-          viewBox="0 0 20 20"
-          aria-hidden="true"
-        >
-          <path
-            d="M5 7.5l5 5 5-5"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </button>
-
-      {open &&
-        pos &&
-        createPortal(
-          <ul
-            id={listId}
-            ref={menuRef}
-            role="listbox"
-            className={`rank-dd__menu ${pos.up ? "rank-dd__menu--up" : ""}`}
-            style={{
-              position: "fixed",
-              top: pos.top,
-              bottom: pos.bottom,
-              left: pos.left,
-              minWidth: Math.max(pos.width, 140),
-            }}
-          >
-            {options.map((o, i) => (
-              <li
-                key={String(o.value)}
-                role="option"
-                aria-selected={o.value === value}
-                className={`rank-dd__option ${
-                  i === active ? "rank-dd__option--active" : ""
-                } ${o.value === value ? "rank-dd__option--selected" : ""}`}
-                onMouseEnter={() => setActive(i)}
-                onClick={() => choose(i)}
-              >
-                <span>{o.label}</span>
-                {o.value === value && (
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 20 20"
-                    aria-hidden="true"
-                  >
-                    <path
-                      d="M4 10.5l4 4 8-9"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                )}
-              </li>
-            ))}
-          </ul>,
-          document.body,
-        )}
-    </>
-  );
-}
-</file>
-
-<file path="backend/requirements.txt">
-Flask==3.0.3
-Flask-Cors==4.0.1
-
- 
-requests==2.32.3
-python-dotenv==1.0.1
-</file>
-
-<file path="frontend/public/manifest.webmanifest">
-{
-  "name": "Watchlist Tracker",
-  "short_name": "Watchlist",
-  "description": "Track, rate, and discover your favorite movies and TV shows.",
-  "start_url": "/",
-  "display": "standalone",
-  "background_color": "#150c2e",
-  "theme_color": "#150c2e",
-  "orientation": "portrait-primary",
-  "icons": [
-    {
-      "src": "/favicon.png",
-      "sizes": "any",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
-  ]
-}
-</file>
-
-<file path="frontend/public/sw.js">
-const CACHE_NAME = "watchlist-shell-v1";
-const APP_SHELL = ["/", "/index.html", "/manifest.webmanifest"];
-
-self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)),
-  );
-  self.skipWaiting();
-});
-
-self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(
-          keys
-            .filter((key) => key !== CACHE_NAME)
-            .map((key) => caches.delete(key)),
-        ),
-      ),
-  );
-  self.clients.claim();
-});
-
-self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET") return;
-
-  event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request)),
-  );
-});
-</file>
-
-<file path="frontend/src/components/AddItemForm.jsx">
-import { useEffect, useRef, useState } from "react";
-import StarRating from "./StarRating.jsx";
-import { api } from "../api.js";
-import SelectDropdown from "./SelectDropdown.jsx";
-
-const EMPTY = {
-  title: "",
-  genre: "",
-  status: "plan to watch",
-  rating: 0,
-  poster_url: "",
-  tmdb_id: null,
-  media_type: null,
-  year: null,
-};
-
-const QUICK_GENRES = [
-  "Action",
-  "Sci-Fi",
-  "Animation",
-  "Drama",
-  "Comedy",
-  "Thriller",
-  "Horror",
-  "Romance",
-];
-
-export default function AddItemForm({ onAdd }) {
-  const [form, setForm] = useState(EMPTY);
-  const [error, setError] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  const [suggestions, setSuggestions] = useState([]);
-  const [searching, setSearching] = useState(false);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [searchError, setSearchError] = useState("");
-  const debounceRef = useRef(null);
-  const skipNextSearch = useRef(false);
-
-  async function runSearch(query) {
-    setSearching(true);
-    setSearchError("");
-    try {
-      const results = await api.searchTitles(query);
-      if (results.error) {
-        setSearchError(results.error);
-        setSuggestions([]);
-      } else {
-        setSuggestions(results);
-      }
-    } catch (err) {
-      setSearchError(err.message);
-      setSuggestions([]);
-    } finally {
-      setSearching(false);
-    }
-  }
-
-  useEffect(() => {
-    if (skipNextSearch.current) {
-      skipNextSearch.current = false;
-      return;
-    }
-
-    clearTimeout(debounceRef.current);
-
-    const query = form.title.trim();
-    if (query.length < 2) {
-      setSuggestions([]);
-      setSearchError("");
-      return;
-    }
-
-    debounceRef.current = setTimeout(() => runSearch(query), 400);
-    return () => clearTimeout(debounceRef.current);
-  }, [form.title]);
-
-  function selectSuggestion(suggestion) {
-    skipNextSearch.current = true;
-    setForm((f) => ({
-      ...f,
-      title: suggestion.title,
-      genre: suggestion.genre || f.genre,
-      poster_url: suggestion.poster_url || "",
-      tmdb_id: suggestion.tmdb_id || null,
-      media_type: suggestion.media_type || null,
-      year: suggestion.year || null,
-    }));
-    setSuggestions([]);
-    setShowSuggestions(false);
-  }
-
-  function changePoster() {
-    setForm((f) => ({
-      ...f,
-      poster_url: "",
-      tmdb_id: null,
-      media_type: null,
-      year: null,
-    }));
-    setShowSuggestions(true);
-    const query = form.title.trim();
-    if (query.length >= 2) runSearch(query);
-  }
-
-  function toggleGenre(g) {
-    setForm((f) => {
-      const current = f.genre
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-      const exists = current.some((c) => c.toLowerCase() === g.toLowerCase());
-      const next = exists
-        ? current.filter((c) => c.toLowerCase() !== g.toLowerCase())
-        : [...current, g];
-      return { ...f, genre: next.join(", ") };
-    });
-  }
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    if (!form.title.trim()) {
-      setError("Give it a title before adding it to the shelf.");
-      return;
-    }
-    setSaving(true);
-    setError("");
-    try {
-      await onAdd(form);
-      setForm(EMPTY);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function handleKeyDown(e) {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      setForm(EMPTY);
-      setShowSuggestions(false);
-    } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-      e.preventDefault();
-      handleSubmit(e);
-    }
-  }
-
-  const activeGenres = form.genre
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-
-  return (
-    <form
-      className="index-card"
-      onSubmit={handleSubmit}
-      onKeyDown={handleKeyDown}
-    >
-      <div className="index-card__row index-card__row--fields">
-        <label className="field field--grow">
-          <span>Title</span>
-          <div className="title-search">
-            <input
-              autoFocus
-              type="text"
-              placeholder="Start typing a title…"
-              value={form.title}
-              onChange={(e) => {
-                setForm((f) => ({
-                  ...f,
-                  title: e.target.value,
-                  poster_url: "",
-                  tmdb_id: null,
-                  media_type: null,
-                  year: null,
-                }));
-                setShowSuggestions(true);
-              }}
-              onFocus={() => setShowSuggestions(true)}
-              onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-              autoComplete="off"
-            />
-
-            {showSuggestions && form.title.trim().length >= 2 && (
-              <div className="suggestions">
-                {searching && (
-                  <div className="suggestions__status">Searching…</div>
-                )}
-
-                {!searching && searchError && (
-                  <div className="suggestions__status suggestions__status--error">
-                    {searchError}
-                  </div>
-                )}
-
-                {!searching && !searchError && suggestions.length === 0 && (
-                  <div className="suggestions__status">No matches found.</div>
-                )}
-
-                {!searching &&
-                  suggestions.map((s, i) => (
-                    <button
-                      type="button"
-                      key={`${s.title}-${i}`}
-                      className="suggestion"
-                      onMouseDown={() => selectSuggestion(s)}
-                    >
-                      {s.poster_url ? (
-                        <img
-                          src={s.poster_url}
-                          alt=""
-                          className="suggestion__poster"
-                        />
-                      ) : (
-                        <div className="suggestion__poster suggestion__poster--empty">
-                          🎬
-                        </div>
-                      )}
-                      <span className="suggestion__text">
-                        <span className="suggestion__title">{s.title}</span>
-                        <span className="suggestion__meta">
-                          {[s.kind, s.year, s.genre]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </span>
-                      </span>
-                    </button>
-                  ))}
-              </div>
-            )}
-          </div>
-        </label>
-
-        <label className="field field--grow">
-          <span>Genre</span>
-          <input
-            type="text"
-            placeholder="e.g. Anime"
-            value={form.genre}
-            onChange={(e) => setForm({ ...form, genre: e.target.value })}
-          />
-        </label>
-      </div>
-
-      <div className="genre-chips">
-        {QUICK_GENRES.map((g) => (
-          <button
-            type="button"
-            key={g}
-            className={`genre-chip ${
-              activeGenres.includes(g.toLowerCase()) ? "genre-chip--active" : ""
-            }`}
-            onClick={() => toggleGenre(g)}
-          >
-            {g}
-          </button>
-        ))}
-      </div>
-
-      {form.poster_url && (
-        <div className="poster-card">
-          <img src={form.poster_url} alt="" className="poster-card__img" />
-          <div className="poster-card__meta">
-            <span className="poster-card__title">{form.title}</span>
-            <span className="poster-card__sub">
-              {[form.media_type === "tv" ? "TV Series" : "Movie", form.year]
-                .filter(Boolean)
-                .join(" • ")}
-            </span>
-          </div>
-          <div className="poster-card__actions">
-            <button
-              type="button"
-              className="btn btn--tiny btn--ghost"
-              onClick={changePoster}
-            >
-              Change
-            </button>
-            <button
-              type="button"
-              className="btn btn--tiny btn--ghost"
-              onClick={() =>
-                setForm((f) => ({
-                  ...f,
-                  poster_url: "",
-                  tmdb_id: null,
-                  media_type: null,
-                  year: null,
-                }))
-              }
-            >
-              Remove
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="index-card__row index-card__row--meta">
-        <div className="field">
-          <span>Status</span>
-          <SelectDropdown
-            ariaLabel="Status"
-            value={form.status}
-            onChange={(status) =>
-              setForm({
-                ...form,
-                status,
-                rating: status === "completed" ? form.rating : 0,
-              })
-            }
-            options={[
-              { value: "plan to watch", label: "Plan to Watch" },
-              { value: "watching", label: "Watching" },
-              { value: "completed", label: "Completed" },
-            ]}
-          />
-        </div>
-
-        <div className="field">
-          <span>Rating</span>
-          <StarRating
-            value={form.rating}
-            readOnly={form.status !== "completed"}
-            onChange={(rating) =>
-              form.status === "completed" && setForm({ ...form, rating })
-            }
-            showLabel
-          />
-        </div>
-
-        <div className="index-card__actions">
-          <button
-            type="button"
-            className="btn btn--ghost"
-            onClick={() => setForm(EMPTY)}
-          >
-            Cancel
-          </button>
-          <button type="submit" className="btn btn--primary" disabled={saving}>
-            {saving ? "Adding…" : "Add to list"}
-          </button>
-        </div>
-      </div>
-
-      {error && <p className="form-error">{error}</p>}
-    </form>
-  );
-}
-</file>
-
-<file path="frontend/src/components/CollectionsPage.jsx">
-import { useEffect, useMemo, useState } from "react";
-
-const STORAGE_KEY = "watchlist-collections-v1";
-const CHALLENGE_KEY = "watchlist-challenges-v1";
-
-function read(key, fallback) {
-  try {
-    return JSON.parse(localStorage.getItem(key)) || fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-export default function CollectionsPage({ items }) {
-  const [collections, setCollections] = useState(() => read(STORAGE_KEY, []));
-  const [challenges, setChallenges] = useState(() => read(CHALLENGE_KEY, []));
-  const [name, setName] = useState("");
-  const [challengeName, setChallengeName] = useState("");
-  const [challengeGoal, setChallengeGoal] = useState(10);
-  const completed = useMemo(
-    () => items.filter((item) => item.status === "completed"),
-    [items],
-  );
-
-  useEffect(
-    () => localStorage.setItem(STORAGE_KEY, JSON.stringify(collections)),
-    [collections],
-  );
-  useEffect(
-    () => localStorage.setItem(CHALLENGE_KEY, JSON.stringify(challenges)),
-    [challenges],
-  );
-
-  function createCollection(event) {
-    event.preventDefault();
-    const title = name.trim();
-    if (!title) return;
-    setCollections((current) => [
-      ...current,
-      { id: crypto.randomUUID(), name: title, itemIds: [] },
-    ]);
-    setName("");
-  }
-  function toggleItem(collectionId, itemId) {
-    setCollections((current) =>
-      current.map((collection) =>
-        collection.id !== collectionId
-          ? collection
-          : {
-              ...collection,
-              itemIds: collection.itemIds.includes(itemId)
-                ? collection.itemIds.filter((id) => id !== itemId)
-                : [...collection.itemIds, itemId],
-            },
-      ),
-    );
-  }
-  function createChallenge(event) {
-    event.preventDefault();
-    const title = challengeName.trim();
-    if (!title || Number(challengeGoal) < 1) return;
-    setChallenges((current) => [
-      ...current,
-      { id: crypto.randomUUID(), name: title, goal: Number(challengeGoal) },
-    ]);
-    setChallengeName("");
-    setChallengeGoal(10);
-  }
-
-  return (
-    <div className="feature-page">
-      <header className="feature-page__intro">
-        <span className="feature-page__eyebrow">
-          <span className="feature-page__eyebrow-dot" />
-          Collections
-        </span>
-        <h1 className="feature-page__headline">
-          Build your <span>own shelves</span>
-        </h1>
-        <p className="feature-page__lede">
-          Group titles by mood, theme, director, or the challenge you are
-          chasing.
-        </p>
-      </header>
-      <div className="feature-columns">
-        <section className="feature-section">
-          <div className="feature-section__heading">
-            <h2>Themed playlists</h2>
-            <span>{collections.length}</span>
-          </div>
-          <form className="inline-create" onSubmit={createCollection}>
-            <input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Mind-bending thrillers"
-              aria-label="Collection name"
-            />
-            <button type="submit">Create list</button>
-          </form>
-          {collections.length === 0 ? (
-            <p className="empty-state">Create your first collection.</p>
-          ) : (
-            collections.map((collection) => (
-              <article className="collection-card" key={collection.id}>
-                <div>
-                  <h3>{collection.name}</h3>
-                  <span>{collection.itemIds.length} titles</span>
-                </div>
-                <div className="collection-card__items">
-                  {items.map((item) => (
-                    <label key={item.id}>
-                      <input
-                        type="checkbox"
-                        checked={collection.itemIds.includes(item.id)}
-                        onChange={() => toggleItem(collection.id, item.id)}
-                      />{" "}
-                      {item.title}
-                    </label>
-                  ))}
-                </div>
-              </article>
-            ))
-          )}
-        </section>
-        <section className="feature-section">
-          <div className="feature-section__heading">
-            <h2>Watch challenges</h2>
-            <span>{completed.length} completed</span>
-          </div>
-          <form className="inline-create" onSubmit={createChallenge}>
-            <input
-              value={challengeName}
-              onChange={(event) => setChallengeName(event.target.value)}
-              placeholder="50 films in 2026"
-              aria-label="Challenge name"
-            />
-            <input
-              type="number"
-              min="1"
-              value={challengeGoal}
-              onChange={(event) => setChallengeGoal(event.target.value)}
-              aria-label="Challenge goal"
-            />
-            <button type="submit">Add goal</button>
-          </form>
-          {challenges.length === 0 ? (
-            <p className="empty-state">Set a goal and make it yours.</p>
-          ) : (
-            challenges.map((challenge) => {
-              const progress = Math.min(completed.length, challenge.goal);
-              return (
-                <article className="challenge-card" key={challenge.id}>
-                  <div>
-                    <h3>{challenge.name}</h3>
-                    <strong>
-                      {progress} / {challenge.goal}
-                    </strong>
-                  </div>
-                  <div className="challenge-card__track">
-                    <span
-                      style={{ width: `${(progress / challenge.goal) * 100}%` }}
-                    />
-                  </div>
-                </article>
-              );
-            })
-          )}
-        </section>
-      </div>
-    </div>
-  );
-}
-</file>
-
-<file path="frontend/src/components/DiaryPage.jsx">
-import { useMemo, useState } from "react";
-
-function watchedDate(item) {
-  return item.watched_at || item.created_at;
-}
-
-export default function DiaryPage({ items, onOpenDetails }) {
-  const [year, setYear] = useState(String(new Date().getFullYear()));
-  const completed = useMemo(
-    () =>
-      items
-        .filter((item) => item.status === "completed")
-        .sort((a, b) => new Date(watchedDate(b)) - new Date(watchedDate(a))),
-    [items],
-  );
-  const years = [
-    ...new Set(
-      completed.map((item) => new Date(watchedDate(item)).getFullYear()),
-    ),
-  ];
-  const entries = completed.filter(
-    (item) => new Date(watchedDate(item)).getFullYear() === Number(year),
-  );
-  const rewatchCount = completed.filter((item) => item.is_rewatch).length;
-  return (
-    <div className="feature-page">
-      <header className="feature-page__intro">
-        <span className="feature-page__eyebrow">
-          <span className="feature-page__eyebrow-dot" />
-          Diary
-        </span>
-        <h1 className="feature-page__headline">
-          Your <span>watch log</span>
-        </h1>
-        <p className="feature-page__lede">
-          A chronological record of what you watched, with rewatches kept
-          visible without changing completion totals.
-        </p>
-      </header>
-      <div className="diary-summary">
-        <div>
-          <strong>{completed.length}</strong>
-          <span>logged titles</span>
-        </div>
-        <div>
-          <strong>{rewatchCount}</strong>
-          <span>rewatches</span>
-        </div>
-        <label>
-          Year{" "}
-          <select
-            value={year}
-            onChange={(event) => setYear(event.target.value)}
-          >
-            {years.length ? (
-              years.map((value) => <option key={value}>{value}</option>)
-            ) : (
-              <option>{new Date().getFullYear()}</option>
-            )}
-          </select>
-        </label>
-      </div>
-      {entries.length === 0 ? (
-        <p className="empty-state">No completed titles logged for this year.</p>
-      ) : (
-        <div className="diary-timeline">
-          {entries.map((item) => {
-            const date = new Date(watchedDate(item));
-            return (
-              <button
-                className="diary-entry"
-                type="button"
-                key={`${item.id}-${watchedDate(item)}`}
-                onClick={() => onOpenDetails(item)}
-              >
-                <time>
-                  <strong>{date.getDate()}</strong>
-                  <span>
-                    {date.toLocaleString("default", { month: "short" })}
-                  </span>
-                </time>
-                <span className="diary-entry__line" />
-                <span className="diary-entry__content">
-                  <strong>{item.title}</strong>
-                  <small>
-                    {item.genre || "Uncategorized"}
-                    {item.is_rewatch ? " · Rewatch" : ""}
-                  </small>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-</file>
-
-<file path="frontend/src/components/FilterTabs.jsx">
-const TABS = [
-  { key: "all", label: "All" },
-  { key: "watching", label: "Watching" },
-  { key: "plan to watch", label: "WatchList" },
-  { key: "completed", label: "Completed" },
-];
-
-export default function FilterTabs({ active, onChange, counts }) {
-  return (
-    <div className="tabs-wrap">
-      <div className="tabs">
-        {TABS.map((tab) => (
-          <button
-            key={tab.key}
-            className={`tab ${active === tab.key ? "tab--active" : ""}`}
-            onClick={() => onChange(tab.key)}
-          >
-            {tab.label}
-            <span className="tab__count">{counts[tab.key] ?? 0}</span>
-          </button>
-        ))}
-      </div>
-      <div className="status-legend" aria-label="Status colors">
-        <span>
-          <i className="status-legend__swatch status-legend__swatch--plan" />{" "}
-          Plan to Watch
-        </span>
-        <span>
-          <i className="status-legend__swatch status-legend__swatch--watching" />{" "}
-          Watching
-        </span>
-        <span>
-          <i className="status-legend__swatch status-legend__swatch--completed" />{" "}
-          Completed
-        </span>
-      </div>
     </div>
   );
 }
@@ -2661,579 +1672,364 @@ export default function ProfilePage({ items, onOpenDetails }) {
 }
 </file>
 
-<file path="frontend/src/components/ReviewsPage.jsx">
-import { Component, useEffect, useMemo, useState } from "react";
+<file path="frontend/src/components/RankDropdown.jsx">
+import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { api } from "../api.js";
-import LogEntryModal from "./LogEntryModal.jsx";
-import EpisodeTrackerModal from "./EpisodeTrackerModal.jsx";
 
-function relativeTime(dateStr) {
-  if (!dateStr) return "";
-  const then = new Date(dateStr).getTime();
-  if (Number.isNaN(then)) return "";
-  const diffSec = Math.floor((Date.now() - then) / 1000);
-  if (diffSec < 60) return "just now";
-  const min = Math.floor(diffSec / 60);
-  if (min < 60) return `${min} minute${min !== 1 ? "s" : ""} ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr} hour${hr !== 1 ? "s" : ""} ago`;
-  const day = Math.floor(hr / 24);
-  if (day < 7) return `${day} day${day !== 1 ? "s" : ""} ago`;
-  const week = Math.floor(day / 7);
-  if (week < 5) return `${week} week${week !== 1 ? "s" : ""} ago`;
-  const month = Math.floor(day / 30);
-  if (month < 12) return `${month} month${month !== 1 ? "s" : ""} ago`;
-  const year = Math.floor(day / 365);
-  return `${year} year${year !== 1 ? "s" : ""} ago`;
-}
+const OPTIONS = [
+  { value: null, label: "☆ No rank" },
+  { value: 1, label: "★ #1" },
+  { value: 2, label: "★ #2" },
+  { value: 3, label: "★ #3" },
+  { value: 4, label: "★ #4" },
+  { value: 5, label: "★ #5" },
+];
 
-function ReviewCard({ item, onOpenDetails, onUpdate, onDelete }) {
-  const [expanded, setExpanded] = useState(false);
-  const [imgLoaded, setImgLoaded] = useState(false);
-  const [imgError, setImgError] = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [showLogModal, setShowLogModal] = useState(false);
-
-  const reviewDate = item.watched_at || item.created_at;
-  const isLong = item.review.length > 220;
-
-  return (
-    <article className="review-card">
-      <button
-        className="review-card__poster-btn"
-        onClick={() => onOpenDetails(item)}
-        aria-label={`View details for ${item.title}`}
-      >
-        {item.poster_url && !imgError ? (
-          <>
-            {!imgLoaded && (
-              <div className="review-card__poster review-card__poster--skeleton" />
-            )}
-            <img
-              src={item.poster_url}
-              alt=""
-              className="review-card__poster"
-              style={{ display: imgLoaded ? "block" : "none" }}
-              onLoad={() => setImgLoaded(true)}
-              onError={() => setImgError(true)}
-            />
-          </>
-        ) : (
-          <div className="review-card__poster review-card__poster--empty">
-            🎬
-          </div>
-        )}
-      </button>
-
-      <div className="review-card__body">
-        <div className="review-card__header">
-          <h3 className="review-card__title">{item.title}</h3>
-          {reviewDate && (
-            <span className="review-card__time">
-              {item.liked && <span className="review-card__liked">❤️</span>}
-              Reviewed {relativeTime(reviewDate)}
-            </span>
-          )}
-        </div>
-
-        <div className="review-card__rating">
-          {"★".repeat(item.rating)}
-          <span className="review-card__rating-empty">
-            {"★".repeat(5 - item.rating)}
-          </span>
-        </div>
-
-        {item.genre && <p className="review-card__genre">{item.genre}</p>}
-
-        <blockquote
-          className={`review-card__text ${
-            expanded ? "" : "review-card__text--clamped"
-          }`}
-        >
-          “{item.review}”
-        </blockquote>
-        {isLong && (
-          <button
-            type="button"
-            className="review-card__toggle"
-            onClick={() => setExpanded((v) => !v)}
-          >
-            {expanded ? "Show less" : "Read more"}
-          </button>
-        )}
-
-        <div className="review-card__actions">
-          <button
-            type="button"
-            className="review-card__action"
-            title="Edit review"
-            onClick={() => setShowLogModal(true)}
-          >
-            ✏️
-          </button>
-          <button
-            type="button"
-            className={`review-card__action ${
-              item.liked ? "review-card__action--active" : ""
-            }`}
-            title="Like"
-            onClick={() => onUpdate(item.id, { liked: !item.liked })}
-          >
-            {item.liked ? "❤️" : "🤍"}
-          </button>
-          {confirmingDelete ? (
-            <span className="review-card__confirm">
-              Delete?
-              <button
-                type="button"
-                className="btn btn--tiny btn--danger"
-                onClick={() => onDelete(item.id)}
-              >
-                Yes
-              </button>
-              <button
-                type="button"
-                className="btn btn--tiny btn--ghost"
-                onClick={() => setConfirmingDelete(false)}
-              >
-                No
-              </button>
-            </span>
-          ) : (
-            <button
-              type="button"
-              className="review-card__action"
-              title="Delete"
-              onClick={() => setConfirmingDelete(true)}
-            >
-              🗑️
-            </button>
-          )}
-        </div>
-      </div>
-
-      {showLogModal && (
-        <LogEntryModal
-          item={item}
-          onClose={() => setShowLogModal(false)}
-          onSave={async (changes) => {
-            await onUpdate(item.id, changes);
-          }}
-          onDelete={() => {
-            onDelete(item.id);
-          }}
-        />
-      )}
-    </article>
-  );
-}
-
-class ModalBoundary extends Component {
-  state = { error: null };
-
-  static getDerivedStateFromError(error) {
-    return { error };
-  }
-
-  render() {
-    if (this.state.error) {
-      return createPortal(
-        <div className="modal-overlay" onClick={this.props.onClose}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <p className="banner banner--error">
-              Episode editor crashed: {String(this.state.error?.message)}
-            </p>
-            <button
-              type="button"
-              className="btn btn--ghost btn--tiny"
-              onClick={this.props.onClose}
-            >
-              Close
-            </button>
-          </div>
-        </div>,
-        document.body,
-      );
-    }
-    return this.props.children;
-  }
-}
-
-const hasGenre = (genreStr, filter) =>
-  filter === "all" ||
-  (genreStr || "")
-    .split(",")
-    .map((g) => g.trim().toLowerCase())
-    .includes(filter.toLowerCase());
-
-function Stars({ value }) {
-  const n = Math.max(0, Math.min(5, Math.round(value || 0)));
-  return (
-    <>
-      {"★".repeat(n)}
-      <span className="review-card__rating-empty">{"★".repeat(5 - n)}</span>
-    </>
-  );
-}
-
-function EpisodeReviewText({ text }) {
-  const [expanded, setExpanded] = useState(false);
-  const isLong = text.length > 160;
-  return (
-    <>
-      <p
-        className={`season-episodes__text ${
-          isLong && !expanded ? "season-episodes__text--clamped" : ""
-        }`}
-      >
-        “{text}”
-      </p>
-      {isLong && (
-        <button
-          type="button"
-          className="review-card__toggle"
-          onClick={() => setExpanded((v) => !v)}
-        >
-          {expanded ? "Show less" : "Read more"}
-        </button>
-      )}
-    </>
-  );
-}
-
-function SeasonReviewCard({ group, item, onOpenDetails, onChanged }) {
+export default function RankDropdown({ value, onChange }) {
   const [open, setOpen] = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [showTracker, setShowTracker] = useState(false);
-  const { logs } = group;
+  const [active, setActive] = useState(0);
+  const [pos, setPos] = useState(null);
+  const triggerRef = useRef(null);
+  const menuRef = useRef(null);
+  const listId = useId();
 
-  const deleteSeason = async () => {
-    await Promise.all(
-      logs.map((l) =>
-        api.deleteEpisodeLog(l.item_id, l.season_number, l.episode_number),
-      ),
+  const current = value || null;
+  const selectedIndex = Math.max(
+    0,
+    OPTIONS.findIndex((o) => o.value === current),
+  );
+
+  const openMenu = () => {
+    const r = triggerRef.current.getBoundingClientRect();
+    const menuHeight = 250;
+    const flipUp =
+      window.innerHeight - r.bottom < menuHeight && r.top > menuHeight;
+    setPos(
+      flipUp
+        ? { bottom: window.innerHeight - r.top + 6, left: r.left, width: r.width, up: true }
+        : { top: r.bottom + 6, left: r.left, width: r.width, up: false },
     );
-    setConfirmingDelete(false);
-    onChanged();
+    setActive(selectedIndex);
+    setOpen(true);
   };
 
-  const toggleLike = async (log) => {
-    await api.logEpisode(log.item_id, log.season_number, log.episode_number, {
-      rating: log.rating,
-      review: log.review,
-      liked: !log.liked,
-      watched_at: log.watched_at || "",
-    });
-    onChanged();
+  const close = () => setOpen(false);
+
+  const choose = (i) => {
+    onChange(OPTIONS[i].value);
+    close();
+    triggerRef.current?.focus();
   };
 
-  const deleteEpisode = async (log) => {
-    if (!window.confirm(`Delete your review of E${log.episode_number}?`))
+  // close on outside click, scroll, resize
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e) => {
+      if (
+        !triggerRef.current?.contains(e.target) &&
+        !menuRef.current?.contains(e.target)
+      ) {
+        close();
+      }
+    };
+    document.addEventListener("pointerdown", onDown);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [open]);
+
+  const onKeyDown = (e) => {
+    if (!open) {
+      if (["ArrowDown", "ArrowUp", "Enter", " "].includes(e.key)) {
+        e.preventDefault();
+        openMenu();
+      }
       return;
-    await api.deleteEpisodeLog(
-      log.item_id,
-      log.season_number,
-      log.episode_number,
-    );
-    onChanged();
+    }
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setActive((i) => Math.min(i + 1, OPTIONS.length - 1));
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setActive((i) => Math.max(i - 1, 0));
+        break;
+      case "Enter":
+      case " ":
+        e.preventDefault();
+        choose(active);
+        break;
+      case "Escape":
+      case "Tab":
+        close();
+        break;
+      default:
+    }
   };
+
+  const triggerLabel = current ? `★ #${current}` : "☆ Top 5";
 
   return (
-    <article className="review-card">
+    <>
       <button
-        className="review-card__poster-btn"
-        onClick={() => item && onOpenDetails(item)}
-        aria-label={`View details for ${group.title}`}
+        type="button"
+        ref={triggerRef}
+        className={`favorite-select rank-dd__trigger ${
+          current ? "favorite-select--active" : ""
+        }`}
+        onClick={() => (open ? close() : openMenu())}
+        onKeyDown={onKeyDown}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={listId}
+        title="Top 5 of All Time"
       >
-        {group.poster_url ? (
-          <img src={group.poster_url} alt="" className="review-card__poster" />
-        ) : (
-          <div className="review-card__poster review-card__poster--empty">
-            🎬
-          </div>
-        )}
+        {triggerLabel}
       </button>
 
-      <div className="review-card__body">
-        <div className="review-card__header">
-          <h3 className="review-card__title">
-            {group.title} · Season {group.season_number}
-          </h3>
-          <span className="review-card__time">
-            Reviewed {relativeTime(group.date)}
-          </span>
-        </div>
-
-        <div className="review-card__rating">
-          <Stars value={group.avg} />
-          <span className="season-meta">
-            {logs.length} episode review{logs.length !== 1 ? "s" : ""}
-          </span>
-        </div>
-
-        {group.genre && <p className="review-card__genre">{group.genre}</p>}
-
-        <button
-          type="button"
-          className="review-card__toggle"
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
-        >
-          {open ? "Hide episodes ▴" : "Show episodes ▾"}
-        </button>
-
-        {open && (
-          <ul className="season-episodes">
-            {logs.map((log) => (
-              <li key={log.id} className="season-episodes__row">
-                <div className="season-episodes__head">
-                  <span className="season-episodes__ep">
-                    E{log.episode_number}
-                  </span>
-                  <span className="review-card__rating">
-                    <Stars value={log.rating} />
-                  </span>
-                  <span className="season-episodes__actions">
-                    <button
-                      type="button"
-                      className={`review-card__action ${
-                        log.liked ? "review-card__action--active" : ""
-                      }`}
-                      title="Like"
-                      onClick={() => toggleLike(log)}
-                    >
-                      {log.liked ? "❤️" : "🤍"}
-                    </button>
-                    <button
-                      type="button"
-                      className="review-card__action"
-                      title="Delete episode review"
-                      onClick={() => deleteEpisode(log)}
-                    >
-                      🗑️
-                    </button>
-                  </span>
-                </div>
-                {log.review && <EpisodeReviewText text={log.review} />}
-              </li>
-            ))}
-          </ul>
-        )}
-
-        <div className="review-card__actions">
-          <button
-            type="button"
-            className="review-card__action"
-            title="Edit episode reviews"
-            onClick={() => setShowTracker(true)}
-          >
-            ✏️
-          </button>
-          {confirmingDelete ? (
-            <span className="review-card__confirm">
-              Delete season reviews?
-              <button
-                type="button"
-                className="btn btn--tiny btn--danger"
-                onClick={deleteSeason}
-              >
-                Yes
-              </button>
-              <button
-                type="button"
-                className="btn btn--tiny btn--ghost"
-                onClick={() => setConfirmingDelete(false)}
-              >
-                No
-              </button>
-            </span>
-          ) : (
-            <button
-              type="button"
-              className="review-card__action"
-              title="Delete season reviews"
-              onClick={() => setConfirmingDelete(true)}
-            >
-              🗑️
-            </button>
-          )}
-        </div>
-      </div>
-
-      {showTracker &&
-        item &&
+      {open &&
+        pos &&
         createPortal(
-          <ModalBoundary
-            onClose={() => {
-              setShowTracker(false);
-              onChanged();
+          <ul
+            id={listId}
+            ref={menuRef}
+            role="listbox"
+            className={`rank-dd__menu ${pos.up ? "rank-dd__menu--up" : ""}`}
+            style={{
+              position: "fixed",
+              top: pos.top,
+              bottom: pos.bottom,
+              left: pos.left,
+              minWidth: Math.max(pos.width, 120),
             }}
           >
-            <EpisodeTrackerModal
-              item={item}
-              onClose={() => {
-                setShowTracker(false);
-                onChanged();
-              }}
-            />
-          </ModalBoundary>,
+            {OPTIONS.map((o, i) => (
+              <li
+                key={String(o.value)}
+                role="option"
+                aria-selected={o.value === current}
+                className={`rank-dd__option ${
+                  i === active ? "rank-dd__option--active" : ""
+                } ${o.value === current ? "rank-dd__option--selected" : ""}`}
+                onMouseEnter={() => setActive(i)}
+                onClick={() => choose(i)}
+              >
+                <span>{o.label}</span>
+                {o.value === current && (
+                  <svg width="14" height="14" viewBox="0 0 20 20" aria-hidden="true">
+                    <path
+                      d="M4 10.5l4 4 8-9"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                )}
+              </li>
+            ))}
+          </ul>,
           document.body,
         )}
-    </article>
+    </>
   );
 }
+</file>
 
-export default function ReviewsPage({
-  items,
-  onOpenDetails,
-  onUpdate,
-  onDelete,
+<file path="frontend/src/components/SelectDropdown.jsx">
+import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+
+/**
+ * Generic custom select.
+ * options: [{ value: "plan to watch", label: "Plan to Watch" }, ...]
+ */
+export default function SelectDropdown({
+  value,
+  onChange,
+  options,
+  ariaLabel,
+  className = "",
 }) {
-  const [sortBy, setSortBy] = useState("recent");
-  const [genreFilter, setGenreFilter] = useState("all");
-  const [episodeLogs, setEpisodeLogs] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const [pos, setPos] = useState(null);
+  const triggerRef = useRef(null);
+  const menuRef = useRef(null);
+  const listId = useId();
 
-  const loadEpisodeLogs = () =>
-    api
-      .getEpisodeReviews()
-      .then(setEpisodeLogs)
-      .catch(() => {});
+  const selectedIndex = Math.max(
+    0,
+    options.findIndex((o) => o.value === value),
+  );
+  const selected = options[selectedIndex];
+
+  const close = () => setOpen(false);
+
+  const openMenu = () => {
+    const r = triggerRef.current.getBoundingClientRect();
+    const menuHeight = options.length * 38 + 20;
+    const flipUp =
+      window.innerHeight - r.bottom < menuHeight && r.top > menuHeight;
+    setPos(
+      flipUp
+        ? {
+            bottom: window.innerHeight - r.top + 6,
+            left: r.left,
+            width: r.width,
+            up: true,
+          }
+        : { top: r.bottom + 6, left: r.left, width: r.width, up: false },
+    );
+    setActive(selectedIndex);
+    setOpen(true);
+  };
+
+  const choose = (i) => {
+    onChange(options[i].value);
+    close();
+    triggerRef.current?.focus();
+  };
 
   useEffect(() => {
-    loadEpisodeLogs();
-  }, []);
+    if (!open) return;
+    const onDown = (e) => {
+      if (
+        !triggerRef.current?.contains(e.target) &&
+        !menuRef.current?.contains(e.target)
+      ) {
+        close();
+      }
+    };
+    document.addEventListener("pointerdown", onDown);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [open]);
 
-  const reviewed = items.filter((it) => it.status === "completed" && it.review);
-
-  const genres = useMemo(() => {
-    const set = new Set();
-    [...reviewed, ...episodeLogs].forEach((it) => {
-      (it.genre || "")
-        .split(",")
-        .map((g) => g.trim())
-        .filter(Boolean)
-        .forEach((g) => set.add(g));
-    });
-    return [...set].sort();
-  }, [reviewed, episodeLogs]);
-
-  const seasonGroups = useMemo(() => {
-    const map = new Map();
-    episodeLogs
-      .filter((log) => hasGenre(log.genre, genreFilter))
-      .forEach((log) => {
-        const key = `${log.item_id}-${log.season_number}`;
-        if (!map.has(key)) {
-          map.set(key, {
-            key,
-            item_id: log.item_id,
-            season_number: log.season_number,
-            title: log.title,
-            poster_url: log.poster_url,
-            genre: log.genre,
-            logs: [],
-          });
-        }
-        map.get(key).logs.push(log);
-      });
-
-    return [...map.values()].map((g) => {
-      g.logs.sort((a, b) => a.episode_number - b.episode_number);
-      const rated = g.logs.filter((l) => l.rating > 0);
-      g.avg = rated.length
-        ? rated.reduce((sum, l) => sum + l.rating, 0) / rated.length
-        : 0;
-      g.date = new Date(
-        Math.max(...g.logs.map((l) => new Date(l.watched_at || l.created_at))),
-      );
-      return g;
-    });
-  }, [episodeLogs, genreFilter]);
-
-  const visible = reviewed
-    .filter((it) => hasGenre(it.genre, genreFilter))
-    .sort((a, b) => {
-      if (sortBy === "rating") return b.rating - a.rating;
-      if (sortBy === "title") return a.title.localeCompare(b.title);
-      const aDate = new Date(a.watched_at || a.created_at);
-      const bDate = new Date(b.watched_at || b.created_at);
-      return bDate - aDate;
-    });
-
-  if (reviewed.length === 0 && episodeLogs.length === 0) {
-    return (
-      <div className="empty-state">
-        <p>No reviews yet. Write one from any completed title.</p>
-      </div>
-    );
-  }
-
-  const total = visible.length + seasonGroups.length;
+  const onKeyDown = (e) => {
+    if (!open) {
+      if (["ArrowDown", "ArrowUp", "Enter", " "].includes(e.key)) {
+        e.preventDefault();
+        openMenu();
+      }
+      return;
+    }
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setActive((i) => Math.min(i + 1, options.length - 1));
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setActive((i) => Math.max(i - 1, 0));
+        break;
+      case "Enter":
+      case " ":
+        e.preventDefault();
+        choose(active);
+        break;
+      case "Escape":
+      case "Tab":
+        close();
+        break;
+      default:
+    }
+  };
 
   return (
-    <div className="reviews-page">
-      <div className="reviews-toolbar">
-        <label className="reviews-toolbar__field">
-          <span>Sort by</span>
-          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
-            <option value="recent">Recently watched</option>
-            <option value="rating">Rating (high to low)</option>
-            <option value="title">Title (A–Z)</option>
-          </select>
-        </label>
+    <>
+      <button
+        type="button"
+        ref={triggerRef}
+        className={`select-dd__trigger ${open ? "select-dd__trigger--open" : ""} ${className}`}
+        onClick={() => (open ? close() : openMenu())}
+        onKeyDown={onKeyDown}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-label={ariaLabel}
+      >
+        <span className="select-dd__value">{selected?.label}</span>
+        <svg
+          className="select-dd__chevron"
+          width="14"
+          height="14"
+          viewBox="0 0 20 20"
+          aria-hidden="true"
+        >
+          <path
+            d="M5 7.5l5 5 5-5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
 
-        {genres.length > 0 && (
-          <label className="reviews-toolbar__field">
-            <span>Genre</span>
-            <select
-              value={genreFilter}
-              onChange={(e) => setGenreFilter(e.target.value)}
-            >
-              <option value="all">All genres</option>
-              {genres.map((g) => (
-                <option key={g} value={g}>
-                  {g}
-                </option>
-              ))}
-            </select>
-          </label>
+      {open &&
+        pos &&
+        createPortal(
+          <ul
+            id={listId}
+            ref={menuRef}
+            role="listbox"
+            className={`rank-dd__menu ${pos.up ? "rank-dd__menu--up" : ""}`}
+            style={{
+              position: "fixed",
+              top: pos.top,
+              bottom: pos.bottom,
+              left: pos.left,
+              minWidth: Math.max(pos.width, 140),
+            }}
+          >
+            {options.map((o, i) => (
+              <li
+                key={String(o.value)}
+                role="option"
+                aria-selected={o.value === value}
+                className={`rank-dd__option ${
+                  i === active ? "rank-dd__option--active" : ""
+                } ${o.value === value ? "rank-dd__option--selected" : ""}`}
+                onMouseEnter={() => setActive(i)}
+                onClick={() => choose(i)}
+              >
+                <span>{o.label}</span>
+                {o.value === value && (
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 20 20"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M4 10.5l4 4 8-9"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                )}
+              </li>
+            ))}
+          </ul>,
+          document.body,
         )}
-
-        <span className="reviews-toolbar__count">
-          {total} review{total !== 1 ? "s" : ""}
-        </span>
-      </div>
-
-      {[
-        ...visible.map((item) => ({
-          date: new Date(item.watched_at || item.created_at),
-          node: (
-            <ReviewCard
-              key={`item-${item.id}`}
-              item={item}
-              onOpenDetails={onOpenDetails}
-              onUpdate={onUpdate}
-              onDelete={onDelete}
-            />
-          ),
-        })),
-        ...seasonGroups.map((g) => ({
-          date: g.date,
-          node: (
-            <SeasonReviewCard
-              key={`season-${g.key}`}
-              group={g}
-              item={items.find((it) => it.id === g.item_id)}
-              onOpenDetails={onOpenDetails}
-              onChanged={loadEpisodeLogs}
-            />
-          ),
-        })),
-      ]
-        .sort((a, b) => b.date - a.date)
-        .map((entry) => entry.node)}
-    </div>
+    </>
   );
 }
 </file>
@@ -4143,6 +2939,2044 @@ export default function TitleDetailModal({ item, onClose, onBackfill }) {
         </div>
       </div>
     </div>
+  );
+}
+</file>
+
+<file path="frontend/src/main.jsx">
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App.jsx";
+import "./index.css";
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  });
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+);
+</file>
+
+<file path="frontend/index.html">
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Track, rate, and discover your favorite movies and TV shows."
+    />
+    <meta name="theme-color" content="#150c2e" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+    <meta name="apple-mobile-web-app-title" content="Watchlist" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <title>WATCHLIST</title>
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="/favicon.png" />
+
+    <!-- Google Fonts Preconnect -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=Karla:wght@400;500;600;700&family=Monoton&family=Michroma&family=Plus+Jakarta+Sans:wght@700;800&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
+</file>
+
+<file path="frontend/package.json">
+{
+  "name": "watchlist-tracker-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.4.1"
+  }
+}
+</file>
+
+<file path="frontend/vite.config.js">
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    port: 5173,
+  },
+});
+</file>
+
+<file path=".gitignore">
+# Backend
+backend/__pycache__/
+backend/watchlist.db
+*.pyc
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Editor/OS
+.DS_Store
+.vscode/
+
+#API TMDB
+backend/.env
+</file>
+
+<file path="LICENSE">
+MIT License
+
+Copyright (c) 2026 Noetzki D. Antolijao
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+</file>
+
+<file path="README.md">
+# The Watchlist — Movie/Anime Tracker
+
+A cozy, brown-themed watchlist tracker.
+
+- **Frontend:** React (Vite)
+- **Backend:** Python (Flask) + SQLite — your data is saved to a real database file, so it persists between restarts.
+
+Fields per item: title, genre, status (`watching` / `plan to watch` / `completed`), rating (0–5 stars).
+
+## Project layout
+
+```
+watchlist-tracker/
+  backend/
+    app.py              Flask API + SQLite setup
+    requirements.txt
+  frontend/
+    index.html
+    package.json
+    vite.config.js
+    src/
+      main.jsx
+      App.jsx
+      index.css
+      api.js
+      components/
+        AddItemForm.jsx
+        FilterTabs.jsx
+        StarRating.jsx
+        WatchlistItem.jsx
+```
+
+## 1. Run the backend
+
+Requires Python 3.9+.
+
+```bash
+cd backend
+pip install -r requirements.txt
+python app.py
+```
+
+This starts the API at `http://localhost:5000`. On first run it creates `watchlist.db`
+in the `backend/` folder — that file is your database, and it'll keep growing with
+your data across restarts. Delete it any time to start fresh.
+
+Quick check it's alive: open `http://localhost:5000/api/health` in a browser — you
+should see `{"status": "ok"}`.
+
+## 2. Run the frontend
+
+Requires Node.js 18+.
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+This starts the app at `http://localhost:5173`. Open that URL in your browser.
+
+## Running both together
+
+You need **two terminals open at the same time**:
+
+```bash
+# Terminal 1
+cd backend
+python app.py
+
+# Terminal 2
+cd frontend
+npm run dev
+```
+
+The frontend is hardcoded to call the API at `http://localhost:5000/api` (see
+`frontend/src/api.js`) — as long as the backend is running on port 5000, everything
+connects automatically. No extra config needed.
+
+## Using the app
+
+- Click **+ Add title** to add a movie or anime, with genre, status, and star rating.
+- Click stars on any card to update its rating instantly.
+- Use the status dropdown on a card to move it between Watching / Plan to Watch / Completed.
+- Use the tabs to filter the list.
+- Click the ✕ on a card to remove it (with a confirm step).
+
+## Notes on the database
+
+`watchlist.db` is a plain SQLite file — you can open it with any SQLite browser
+(e.g. [DB Browser for SQLite](https://sqlitebrowser.org/)) if you ever want to look
+at or edit your data directly. To back up your watchlist, just copy that file.
+
+## Deploying / using on a different machine
+
+If you ever run the backend somewhere other than `localhost:5000`, update the
+`BASE_URL` constant at the top of `frontend/src/api.js` to match.
+</file>
+
+<file path="frontend/src/components/AddItemForm.jsx">
+import { useEffect, useRef, useState } from "react";
+import StarRating from "./StarRating.jsx";
+import { api } from "../api.js";
+import SelectDropdown from "./SelectDropdown.jsx";
+
+const EMPTY = {
+  title: "",
+  genre: "",
+  status: "plan to watch",
+  rating: 0,
+  poster_url: "",
+  tmdb_id: null,
+  media_type: null,
+  year: null,
+};
+
+const QUICK_GENRES = [
+  "Action",
+  "Sci-Fi",
+  "Animation",
+  "Drama",
+  "Comedy",
+  "Thriller",
+  "Horror",
+  "Romance",
+];
+
+export default function AddItemForm({ onAdd }) {
+  const [form, setForm] = useState(EMPTY);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const [suggestions, setSuggestions] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [searchError, setSearchError] = useState("");
+  const debounceRef = useRef(null);
+  const skipNextSearch = useRef(false);
+
+  async function runSearch(query) {
+    setSearching(true);
+    setSearchError("");
+    try {
+      const results = await api.searchTitles(query);
+      if (results.error) {
+        setSearchError(results.error);
+        setSuggestions([]);
+      } else {
+        setSuggestions(results);
+      }
+    } catch (err) {
+      setSearchError(err.message);
+      setSuggestions([]);
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  useEffect(() => {
+    if (skipNextSearch.current) {
+      skipNextSearch.current = false;
+      return;
+    }
+
+    clearTimeout(debounceRef.current);
+
+    const query = form.title.trim();
+    if (query.length < 2) {
+      setSuggestions([]);
+      setSearchError("");
+      return;
+    }
+
+    debounceRef.current = setTimeout(() => runSearch(query), 400);
+    return () => clearTimeout(debounceRef.current);
+  }, [form.title]);
+
+  function selectSuggestion(suggestion) {
+    skipNextSearch.current = true;
+    setForm((f) => ({
+      ...f,
+      title: suggestion.title,
+      genre: suggestion.genre || f.genre,
+      poster_url: suggestion.poster_url || "",
+      tmdb_id: suggestion.tmdb_id || null,
+      media_type: suggestion.media_type || null,
+      year: suggestion.year || null,
+    }));
+    setSuggestions([]);
+    setShowSuggestions(false);
+  }
+
+  function changePoster() {
+    setForm((f) => ({
+      ...f,
+      poster_url: "",
+      tmdb_id: null,
+      media_type: null,
+      year: null,
+    }));
+    setShowSuggestions(true);
+    const query = form.title.trim();
+    if (query.length >= 2) runSearch(query);
+  }
+
+  function toggleGenre(g) {
+    setForm((f) => {
+      const current = f.genre
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const exists = current.some((c) => c.toLowerCase() === g.toLowerCase());
+      const next = exists
+        ? current.filter((c) => c.toLowerCase() !== g.toLowerCase())
+        : [...current, g];
+      return { ...f, genre: next.join(", ") };
+    });
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!form.title.trim()) {
+      setError("Give it a title before adding it to the shelf.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await onAdd(form);
+      setForm(EMPTY);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleKeyDown(e) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setForm(EMPTY);
+      setShowSuggestions(false);
+    } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      handleSubmit(e);
+    }
+  }
+
+  const activeGenres = form.genre
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+
+  return (
+    <form
+      className="index-card"
+      onSubmit={handleSubmit}
+      onKeyDown={handleKeyDown}
+    >
+      <div className="index-card__row index-card__row--fields">
+        <label className="field field--grow">
+          <span>Title</span>
+          <div className="title-search">
+            <input
+              autoFocus
+              type="text"
+              placeholder="Start typing a title…"
+              value={form.title}
+              onChange={(e) => {
+                setForm((f) => ({
+                  ...f,
+                  title: e.target.value,
+                  poster_url: "",
+                  tmdb_id: null,
+                  media_type: null,
+                  year: null,
+                }));
+                setShowSuggestions(true);
+              }}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+              autoComplete="off"
+            />
+
+            {showSuggestions && form.title.trim().length >= 2 && (
+              <div className="suggestions">
+                {searching && (
+                  <div className="suggestions__status">Searching…</div>
+                )}
+
+                {!searching && searchError && (
+                  <div className="suggestions__status suggestions__status--error">
+                    {searchError}
+                  </div>
+                )}
+
+                {!searching && !searchError && suggestions.length === 0 && (
+                  <div className="suggestions__status">No matches found.</div>
+                )}
+
+                {!searching &&
+                  suggestions.map((s, i) => (
+                    <button
+                      type="button"
+                      key={`${s.title}-${i}`}
+                      className="suggestion"
+                      onMouseDown={() => selectSuggestion(s)}
+                    >
+                      {s.poster_url ? (
+                        <img
+                          src={s.poster_url}
+                          alt=""
+                          className="suggestion__poster"
+                        />
+                      ) : (
+                        <div className="suggestion__poster suggestion__poster--empty">
+                          🎬
+                        </div>
+                      )}
+                      <span className="suggestion__text">
+                        <span className="suggestion__title">{s.title}</span>
+                        <span className="suggestion__meta">
+                          {[s.kind, s.year, s.genre]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+              </div>
+            )}
+          </div>
+        </label>
+
+        <label className="field field--grow">
+          <span>Genre</span>
+          <input
+            type="text"
+            placeholder="e.g. Anime"
+            value={form.genre}
+            onChange={(e) => setForm({ ...form, genre: e.target.value })}
+          />
+        </label>
+      </div>
+
+      <div className="genre-chips">
+        {QUICK_GENRES.map((g) => (
+          <button
+            type="button"
+            key={g}
+            className={`genre-chip ${
+              activeGenres.includes(g.toLowerCase()) ? "genre-chip--active" : ""
+            }`}
+            onClick={() => toggleGenre(g)}
+          >
+            {g}
+          </button>
+        ))}
+      </div>
+
+      {form.poster_url && (
+        <div className="poster-card">
+          <img src={form.poster_url} alt="" className="poster-card__img" />
+          <div className="poster-card__meta">
+            <span className="poster-card__title">{form.title}</span>
+            <span className="poster-card__sub">
+              {[form.media_type === "tv" ? "TV Series" : "Movie", form.year]
+                .filter(Boolean)
+                .join(" • ")}
+            </span>
+          </div>
+          <div className="poster-card__actions">
+            <button
+              type="button"
+              className="btn btn--tiny btn--ghost"
+              onClick={changePoster}
+            >
+              Change
+            </button>
+            <button
+              type="button"
+              className="btn btn--tiny btn--ghost"
+              onClick={() =>
+                setForm((f) => ({
+                  ...f,
+                  poster_url: "",
+                  tmdb_id: null,
+                  media_type: null,
+                  year: null,
+                }))
+              }
+            >
+              Remove
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="index-card__row index-card__row--meta">
+        <div className="field">
+          <span>Status</span>
+          <SelectDropdown
+            ariaLabel="Status"
+            value={form.status}
+            onChange={(status) =>
+              setForm({
+                ...form,
+                status,
+                rating: status === "completed" ? form.rating : 0,
+              })
+            }
+            options={[
+              { value: "plan to watch", label: "Plan to Watch" },
+              { value: "watching", label: "Watching" },
+              { value: "completed", label: "Completed" },
+            ]}
+          />
+        </div>
+
+        <div className="field">
+          <span>Rating</span>
+          <StarRating
+            value={form.rating}
+            readOnly={form.status !== "completed"}
+            onChange={(rating) =>
+              form.status === "completed" && setForm({ ...form, rating })
+            }
+            showLabel
+          />
+        </div>
+
+        <div className="index-card__actions">
+          <button
+            type="button"
+            className="btn btn--ghost"
+            onClick={() => setForm(EMPTY)}
+          >
+            Cancel
+          </button>
+          <button type="submit" className="btn btn--primary" disabled={saving}>
+            {saving ? "Adding…" : "Add to list"}
+          </button>
+        </div>
+      </div>
+
+      {error && <p className="form-error">{error}</p>}
+    </form>
+  );
+}
+</file>
+
+<file path="frontend/src/components/CollectionsPage.jsx">
+import { useEffect, useMemo, useState } from "react";
+
+const STORAGE_KEY = "watchlist-collections-v1";
+const CHALLENGE_KEY = "watchlist-challenges-v1";
+
+function read(key, fallback) {
+  try {
+    return JSON.parse(localStorage.getItem(key)) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export default function CollectionsPage({ items }) {
+  const [collections, setCollections] = useState(() => read(STORAGE_KEY, []));
+  const [challenges, setChallenges] = useState(() => read(CHALLENGE_KEY, []));
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [challengeName, setChallengeName] = useState("");
+  const [challengeGoal, setChallengeGoal] = useState(10);
+  const [openPickerId, setOpenPickerId] = useState(null);
+  const [pickerQuery, setPickerQuery] = useState("");
+
+  const completed = useMemo(
+    () => items.filter((item) => item.status === "completed"),
+    [items],
+  );
+  const itemsById = useMemo(
+    () => new Map(items.map((item) => [item.id, item])),
+    [items],
+  );
+
+  useEffect(
+    () => localStorage.setItem(STORAGE_KEY, JSON.stringify(collections)),
+    [collections],
+  );
+  useEffect(
+    () => localStorage.setItem(CHALLENGE_KEY, JSON.stringify(challenges)),
+    [challenges],
+  );
+
+  function createCollection(event) {
+    event.preventDefault();
+    const title = name.trim();
+    const summary = description.trim();
+    if (!title || !summary) return;
+    setCollections((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        name: title,
+        description: summary,
+        itemIds: [],
+      },
+    ]);
+    setName("");
+    setDescription("");
+  }
+  function deleteCollection(collectionId) {
+    setCollections((current) =>
+      current.filter((collection) => collection.id !== collectionId),
+    );
+    if (openPickerId === collectionId) {
+      setOpenPickerId(null);
+      setPickerQuery("");
+    }
+  }
+  function toggleItem(collectionId, itemId) {
+    setCollections((current) =>
+      current.map((collection) =>
+        collection.id !== collectionId
+          ? collection
+          : {
+              ...collection,
+              itemIds: collection.itemIds.includes(itemId)
+                ? collection.itemIds.filter((id) => id !== itemId)
+                : [...collection.itemIds, itemId],
+            },
+      ),
+    );
+  }
+  function togglePicker(collectionId) {
+    setOpenPickerId((current) =>
+      current === collectionId ? null : collectionId,
+    );
+    setPickerQuery("");
+  }
+  function createChallenge(event) {
+    event.preventDefault();
+    const title = challengeName.trim();
+    if (!title || Number(challengeGoal) < 1) return;
+    setChallenges((current) => [
+      ...current,
+      { id: crypto.randomUUID(), name: title, goal: Number(challengeGoal) },
+    ]);
+    setChallengeName("");
+    setChallengeGoal(10);
+  }
+  function deleteChallenge(challengeId) {
+    setChallenges((current) =>
+      current.filter((challenge) => challenge.id !== challengeId),
+    );
+  }
+
+  return (
+    <div className="feature-page">
+      <header className="feature-page__intro">
+        <span className="feature-page__eyebrow">
+          <span className="feature-page__eyebrow-dot" />
+          Collections
+        </span>
+        <h1 className="feature-page__headline">
+          Build your <span>own shelves</span>
+        </h1>
+        <p className="feature-page__lede">
+          Group titles by mood, theme, director, or the challenge you are
+          chasing.
+        </p>
+      </header>
+      <div className="feature-columns">
+        <section className="feature-section">
+          <div className="feature-section__heading">
+            <h2>Themed playlists</h2>
+            <span>{collections.length}</span>
+          </div>
+          <form
+            className="inline-create inline-create--stacked"
+            onSubmit={createCollection}
+          >
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Mind-bending thrillers"
+              aria-label="Collection name"
+            />
+            <textarea
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              placeholder="What ties this list together? e.g. Twisty plots that mess with your head."
+              aria-label="Collection description"
+              rows={2}
+            />
+            <button
+              type="submit"
+              disabled={!name.trim() || !description.trim()}
+            >
+              Create list
+            </button>
+          </form>
+          {collections.length === 0 ? (
+            <p className="empty-state">Create your first collection.</p>
+          ) : (
+            collections.map((collection) => {
+              const isOpen = openPickerId === collection.id;
+              const query = pickerQuery.trim().toLowerCase();
+              const filteredItems = isOpen
+                ? items.filter((item) =>
+                    item.title.toLowerCase().includes(query),
+                  )
+                : [];
+              return (
+                <article className="collection-card" key={collection.id}>
+                  <div>
+                    <h3>{collection.name}</h3>
+                    <div className="collection-card__meta-actions">
+                      <span>{collection.itemIds.length} titles</span>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        aria-label={`Delete ${collection.name}`}
+                        title="Delete collection"
+                        onClick={() => deleteCollection(collection.id)}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                  {collection.description && (
+                    <p className="collection-card__desc">
+                      {collection.description}
+                    </p>
+                  )}
+
+                  {collection.itemIds.length > 0 && (
+                    <div className="poster-chip-row">
+                      {collection.itemIds.map((itemId) => {
+                        const item = itemsById.get(itemId);
+                        if (!item) return null;
+                        return (
+                          <div className="poster-chip" key={itemId}>
+                            {item.poster_url ? (
+                              <img src={item.poster_url} alt="" />
+                            ) : (
+                              <div className="poster-chip__empty">🎬</div>
+                            )}
+                            <button
+                              type="button"
+                              className="poster-chip__remove"
+                              aria-label={`Remove ${item.title} from ${collection.name}`}
+                              title={`Remove ${item.title}`}
+                              onClick={() => toggleItem(collection.id, itemId)}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    className={
+                      isOpen
+                        ? "collection-card__add-btn is-open"
+                        : "collection-card__add-btn"
+                    }
+                    onClick={() => togglePicker(collection.id)}
+                  >
+                    {isOpen ? "Done" : "+ Add titles"}
+                  </button>
+
+                  {isOpen && (
+                    <div className="collection-picker">
+                      <input
+                        className="collection-picker__search"
+                        value={pickerQuery}
+                        onChange={(event) => setPickerQuery(event.target.value)}
+                        placeholder="Search your titles"
+                        aria-label={`Search titles to add to ${collection.name}`}
+                        autoFocus
+                      />
+                      <div className="collection-picker__list">
+                        {filteredItems.length === 0 ? (
+                          <p className="collection-picker__empty">
+                            No titles match “{pickerQuery}”.
+                          </p>
+                        ) : (
+                          filteredItems.map((item) => {
+                            const added = collection.itemIds.includes(item.id);
+                            return (
+                              <button
+                                type="button"
+                                key={item.id}
+                                className="collection-picker__row"
+                                onClick={() =>
+                                  toggleItem(collection.id, item.id)
+                                }
+                              >
+                                {item.poster_url ? (
+                                  <img
+                                    src={item.poster_url}
+                                    alt=""
+                                    className="collection-picker__thumb"
+                                  />
+                                ) : (
+                                  <div className="collection-picker__thumb--empty">
+                                    🎬
+                                  </div>
+                                )}
+                                <span className="collection-picker__title">
+                                  {item.title}
+                                </span>
+                                <span className="collection-picker__mark">
+                                  {added ? "✓" : "+"}
+                                </span>
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </article>
+              );
+            })
+          )}
+        </section>
+        <section className="feature-section">
+          <div className="feature-section__heading">
+            <h2>Watch challenges</h2>
+            <span>{completed.length} completed</span>
+          </div>
+          <form className="inline-create" onSubmit={createChallenge}>
+            <input
+              value={challengeName}
+              onChange={(event) => setChallengeName(event.target.value)}
+              placeholder="50 films in 2026"
+              aria-label="Challenge name"
+            />
+            <input
+              type="number"
+              min="1"
+              value={challengeGoal}
+              onChange={(event) => setChallengeGoal(event.target.value)}
+              aria-label="Challenge goal"
+            />
+            <button type="submit">Add goal</button>
+          </form>
+          {challenges.length === 0 ? (
+            <p className="empty-state">Set a goal and make it yours.</p>
+          ) : (
+            challenges.map((challenge) => {
+              const progress = Math.min(completed.length, challenge.goal);
+              return (
+                <article className="challenge-card" key={challenge.id}>
+                  <div>
+                    <h3>{challenge.name}</h3>
+                    <div className="challenge-card__meta-actions">
+                      <strong>
+                        {progress} / {challenge.goal}
+                      </strong>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        aria-label={`Delete ${challenge.name}`}
+                        title="Delete challenge"
+                        onClick={() => deleteChallenge(challenge.id)}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                  <div className="challenge-card__track">
+                    <span
+                      style={{ width: `${(progress / challenge.goal) * 100}%` }}
+                    />
+                  </div>
+                </article>
+              );
+            })
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
+</file>
+
+<file path="frontend/src/components/DiaryPage.jsx">
+import { useMemo, useState } from "react";
+
+function watchedDate(item) {
+  return item.watched_at || item.created_at;
+}
+
+export default function DiaryPage({ items, onOpenDetails }) {
+  const [year, setYear] = useState(String(new Date().getFullYear()));
+  const completed = useMemo(
+    () =>
+      items
+        .filter((item) => item.status === "completed")
+        .sort((a, b) => new Date(watchedDate(b)) - new Date(watchedDate(a))),
+    [items],
+  );
+  const years = [
+    ...new Set(
+      completed.map((item) => new Date(watchedDate(item)).getFullYear()),
+    ),
+  ];
+  const entries = completed.filter(
+    (item) => new Date(watchedDate(item)).getFullYear() === Number(year),
+  );
+  const rewatchCount = completed.filter((item) => item.is_rewatch).length;
+  return (
+    <div className="feature-page">
+      <header className="feature-page__intro">
+        <span className="feature-page__eyebrow">
+          <span className="feature-page__eyebrow-dot" />
+          Diary
+        </span>
+        <h1 className="feature-page__headline">
+          Your <span>watch log</span>
+        </h1>
+        <p className="feature-page__lede">
+          A chronological record of what you watched, with rewatches kept
+          visible without changing completion totals.
+        </p>
+      </header>
+      <div className="diary-summary">
+        <div>
+          <strong>{completed.length}</strong>
+          <span>logged titles</span>
+        </div>
+        <div>
+          <strong>{rewatchCount}</strong>
+          <span>rewatches</span>
+        </div>
+        <label>
+          Year{" "}
+          <select
+            value={year}
+            onChange={(event) => setYear(event.target.value)}
+          >
+            {years.length ? (
+              years.map((value) => <option key={value}>{value}</option>)
+            ) : (
+              <option>{new Date().getFullYear()}</option>
+            )}
+          </select>
+        </label>
+      </div>
+      {entries.length === 0 ? (
+        <p className="empty-state">No completed titles logged for this year.</p>
+      ) : (
+        <div className="diary-timeline">
+          {entries.map((item) => {
+            const date = new Date(watchedDate(item));
+            return (
+              <button
+                className="diary-entry"
+                type="button"
+                key={`${item.id}-${watchedDate(item)}`}
+                onClick={() => onOpenDetails(item)}
+              >
+                <time>
+                  <strong>{date.getDate()}</strong>
+                  <span>
+                    {date.toLocaleString("default", { month: "short" })}
+                  </span>
+                </time>
+                <span className="diary-entry__line" />
+                <span className="diary-entry__content">
+                  <strong>{item.title}</strong>
+                  <small>
+                    {item.genre || "Uncategorized"}
+                    {item.is_rewatch ? " · Rewatch" : ""}
+                  </small>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+</file>
+
+<file path="frontend/src/components/DiscoverPage.jsx">
+import { useEffect, useMemo, useState } from "react";
+import { api } from "../api.js";
+
+function LoadingRail({ title }) {
+  return (
+    <section
+      className="feature-section discovery-loading-rail"
+      aria-label={`Loading ${title}`}
+    >
+      <div className="feature-section__heading">
+        <h2>{title}</h2>
+        <span className="discovery-loading-label">Loading</span>
+      </div>
+      <div className="discovery-grid discovery-grid--scroll">
+        {[1, 2, 3, 4, 5, 6].map((placeholder) => (
+          <div className="discovery-skeleton" key={placeholder} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function Feed({
+  title,
+  items,
+  onAdd,
+  watchlistKeys,
+  headingExtra,
+  compact = false,
+  onLoadMore,
+  loadingMore,
+}) {
+  if (!items.length)
+    return <p className="empty-state">Nothing to show right now.</p>;
+  return (
+    <section className="feature-section">
+      <div className="feature-section__heading">
+        <div className="discovery-heading-title">
+          <h2>{title}</h2>
+          {headingExtra}
+        </div>
+        <span>{items.length} titles</span>
+      </div>
+      <div className="discovery-grid discovery-grid--scroll">
+        {items.map((item) => {
+          const key = `${item.media_type}-${item.tmdb_id}`;
+          const added = watchlistKeys.has(key);
+          return (
+            <article
+              className={`discovery-card ${compact ? "discovery-card--compact" : ""}`}
+              key={key}
+            >
+              <div className="discovery-card__poster-wrap">
+                {item.poster_url ? (
+                  <img
+                    src={item.poster_url}
+                    alt=""
+                    className="discovery-card__poster-img"
+                  />
+                ) : (
+                  <div className="discovery-card__poster discovery-card__poster--empty">
+                    🎬
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className={`discovery-card__add ${added ? "discovery-card__add--added" : ""}`}
+                  disabled={added}
+                  onClick={() => onAdd(item)}
+                  aria-label={
+                    added ? "Already in watchlist" : "Add to watchlist"
+                  }
+                  title={added ? "Already in watchlist" : "Add to watchlist"}
+                >
+                  {added ? "✓" : "+"}
+                </button>
+                {item.vote_average > 0 && (
+                  <span
+                    className="discovery-card__score"
+                    title="TMDB community rating"
+                  >
+                    ★ {item.vote_average.toFixed(1)}
+                  </span>
+                )}
+                {item.year && (
+                  <span className="discovery-card__year-pill">{item.year}</span>
+                )}
+              </div>
+              <div className="discovery-card__body">
+                <h3>{item.title}</h3>
+                <p className="discovery-card__date">
+                  {item.release_date
+                    ? new Date(
+                        `${item.release_date}T12:00:00`,
+                      ).toLocaleDateString(undefined, {
+                        month: "long",
+                        day: "numeric",
+                        year: "numeric",
+                      })
+                    : item.year || "Release date unknown"}
+                </p>
+                <span className="discovery-card__type">
+                  {item.media_type === "tv" ? "TV show" : "Movie"}
+                </span>
+                {item.reason && (
+                  <small className="discovery-card__reason">
+                    {item.reason}
+                  </small>
+                )}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+      <button
+        className="discovery-load-more"
+        type="button"
+        onClick={onLoadMore}
+        disabled={loadingMore}
+      >
+        {loadingMore ? "Loading..." : "Load more"}
+      </button>
+    </section>
+  );
+}
+
+export default function DiscoverPage({ items, onAdd }) {
+  const [feeds, setFeeds] = useState({
+    recommendations: [],
+    trending: [],
+    upcoming: [],
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [mediaType, setMediaType] = useState("all");
+  const [releaseYear, setReleaseYear] = useState("all");
+  const [trendingWindow, setTrendingWindow] = useState("week");
+  const [pages, setPages] = useState({
+    recommendations: 1,
+    trending: 1,
+    upcoming: 1,
+  });
+  const [loadingMore, setLoadingMore] = useState("");
+  const watchlistKeys = useMemo(
+    () =>
+      new Set(
+        items
+          .filter((item) => item.tmdb_id)
+          .map((item) => `${item.media_type || "movie"}-${item.tmdb_id}`),
+      ),
+    [items],
+  );
+  const topGenres = useMemo(() => {
+    const counts = {};
+    items.forEach((item) =>
+      (item.genre || "").split(",").forEach((genre) => {
+        const key = genre.trim();
+        if (key) counts[key] = (counts[key] || 0) + (item.rating || 1);
+      }),
+    );
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([genre]) => genre)
+      .join(",");
+  }, [items]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.discover("recommendations", topGenres).then((data) => {
+      if (!cancelled) {
+        setFeeds((f) => ({ ...f, recommendations: data }));
+        setPages((p) => ({ ...p, recommendations: 1 }));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [topGenres]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([
+      api.discover("trending", "", trendingWindow),
+      api.discover("upcoming"),
+    ])
+      .then(([trending, upcoming]) => {
+        if (!cancelled) {
+          setFeeds((f) => ({ ...f, trending, upcoming }));
+          setPages((p) => ({ ...p, trending: 1, upcoming: 1 }));
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [trendingWindow]);
+
+  const years = useMemo(
+    () =>
+      [
+        ...new Set(
+          Object.values(feeds)
+            .flat()
+            .map((item) => item.year)
+
+            .filter(Boolean),
+        ),
+      ].sort((a, b) => b - a),
+    [feeds],
+  );
+  const filterItems = (feed) =>
+    feed.filter(
+      (item) =>
+        (mediaType === "all" || item.media_type === mediaType) &&
+        (releaseYear === "all" || item.year === releaseYear),
+    );
+  async function loadMore(section) {
+    setLoadingMore(section);
+    const nextPage = pages[section] + 1;
+    try {
+      const more = await api.discover(
+        section,
+        section === "recommendations" ? topGenres : "",
+        trendingWindow,
+        nextPage,
+      );
+
+      if (!Array.isArray(more) || more.length === 0) {
+        return;
+      }
+
+      setFeeds((current) => ({
+        ...current,
+        [section]: more,
+      }));
+
+      setPages((current) => ({ ...current, [section]: nextPage }));
+    } catch (err) {
+      setError(`Failed to load additional titles: ${err.message}`);
+    } finally {
+      setLoadingMore("");
+    }
+  }
+  return (
+    <div className="feature-page">
+      <header className="feature-page__intro">
+        <span className="feature-page__eyebrow">
+          <span className="feature-page__eyebrow-dot" />
+          Discover
+        </span>
+        <h1 className="feature-page__headline">
+          Discover your <span>next favorite</span>
+        </h1>
+        <p className="feature-page__lede">
+          Personalized picks shaped by your favorites and genre habits,
+          alongside what's moving now.
+        </p>
+      </header>
+      <div className="discovery-filters" aria-label="Recommendation filters">
+        <span className="discovery-filters__label">Show</span>
+        {[
+          ["all", "Everything"],
+          ["movie", "Movies"],
+          ["tv", "TV shows"],
+        ].map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            className={mediaType === value ? "active" : ""}
+            onClick={() => setMediaType(value)}
+          >
+            {label}
+          </button>
+        ))}
+        <label>
+          <span className="sr-only">Release year</span>
+          <select
+            value={releaseYear}
+            onChange={(event) => setReleaseYear(event.target.value)}
+          >
+            <option value="all">Any year</option>
+            {years.map((year) => (
+              <option key={year} value={year}>
+                {year}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {error && <p className="banner banner--error">{error}</p>}
+      {loading && (
+        <div className="discovery-loading-state" aria-live="polite">
+          <LoadingRail title="Trending" />
+          <LoadingRail title="Picked for you" />
+        </div>
+      )}
+      {!loading && !error && (
+        <>
+          <Feed
+            title="Trending"
+            compact
+            headingExtra={
+              <div
+                className="trending-toggle"
+                role="group"
+                aria-label="Trending period"
+              >
+                <button
+                  className={trendingWindow === "day" ? "active" : ""}
+                  onClick={() => setTrendingWindow("day")}
+                  type="button"
+                >
+                  Today
+                </button>
+                <button
+                  className={trendingWindow === "week" ? "active" : ""}
+                  onClick={() => setTrendingWindow("week")}
+                  type="button"
+                >
+                  This Week
+                </button>
+              </div>
+            }
+            items={filterItems(feeds.trending)}
+            onAdd={onAdd}
+            watchlistKeys={watchlistKeys}
+            onLoadMore={() => loadMore("trending")}
+            loadingMore={loadingMore === "trending"}
+          />
+          <Feed
+            title="Picked for you"
+            compact
+            items={filterItems(feeds.recommendations)}
+            onAdd={onAdd}
+            watchlistKeys={watchlistKeys}
+            onLoadMore={() => loadMore("recommendations")}
+            loadingMore={loadingMore === "recommendations"}
+          />
+          <Feed
+            title="Top Sci-Fi"
+            items={filterItems(
+              feeds.trending.filter((item) =>
+                (item.genre || "").toLowerCase().includes("sci-fi"),
+              ),
+            )}
+            onAdd={onAdd}
+            watchlistKeys={watchlistKeys}
+            onLoadMore={() => loadMore("trending")}
+            loadingMore={loadingMore === "trending"}
+          />
+          <Feed
+            title="Upcoming releases"
+            items={filterItems(feeds.upcoming)}
+            onAdd={onAdd}
+            watchlistKeys={watchlistKeys}
+            onLoadMore={() => loadMore("upcoming")}
+            loadingMore={loadingMore === "upcoming"}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+</file>
+
+<file path="frontend/src/components/ReviewsPage.jsx">
+import { Component, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import { api } from "../api.js";
+import LogEntryModal from "./LogEntryModal.jsx";
+import EpisodeTrackerModal from "./EpisodeTrackerModal.jsx";
+
+function relativeTime(dateStr) {
+  if (!dateStr) return "";
+  const then = new Date(dateStr).getTime();
+  if (Number.isNaN(then)) return "";
+  const diffSec = Math.floor((Date.now() - then) / 1000);
+  if (diffSec < 60) return "just now";
+  const min = Math.floor(diffSec / 60);
+  if (min < 60) return `${min} minute${min !== 1 ? "s" : ""} ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} hour${hr !== 1 ? "s" : ""} ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day} day${day !== 1 ? "s" : ""} ago`;
+  const week = Math.floor(day / 7);
+  if (week < 5) return `${week} week${week !== 1 ? "s" : ""} ago`;
+  const month = Math.floor(day / 30);
+  if (month < 12) return `${month} month${month !== 1 ? "s" : ""} ago`;
+  const year = Math.floor(day / 365);
+  return `${year} year${year !== 1 ? "s" : ""} ago`;
+}
+
+function ReviewCard({ item, onOpenDetails, onUpdate, onDelete }) {
+  const [expanded, setExpanded] = useState(false);
+  const [imgLoaded, setImgLoaded] = useState(false);
+  const [imgError, setImgError] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [showLogModal, setShowLogModal] = useState(false);
+
+  const reviewDate = item.watched_at || item.created_at;
+  const isLong = item.review.length > 220;
+
+  return (
+    <article className="review-card">
+      <button
+        className="review-card__poster-btn"
+        onClick={() => onOpenDetails(item)}
+        aria-label={`View details for ${item.title}`}
+      >
+        {item.poster_url && !imgError ? (
+          <>
+            {!imgLoaded && (
+              <div className="review-card__poster review-card__poster--skeleton" />
+            )}
+            <img
+              src={item.poster_url}
+              alt=""
+              className="review-card__poster"
+              style={{ display: imgLoaded ? "block" : "none" }}
+              onLoad={() => setImgLoaded(true)}
+              onError={() => setImgError(true)}
+            />
+          </>
+        ) : (
+          <div className="review-card__poster review-card__poster--empty">
+            🎬
+          </div>
+        )}
+      </button>
+
+      <div className="review-card__body">
+        <div className="review-card__header">
+          <h3 className="review-card__title">{item.title}</h3>
+          {reviewDate && (
+            <span className="review-card__time">
+              {item.liked && <span className="review-card__liked">❤️</span>}
+              Reviewed {relativeTime(reviewDate)}
+            </span>
+          )}
+        </div>
+
+        <div className="review-card__rating">
+          {"★".repeat(item.rating)}
+          <span className="review-card__rating-empty">
+            {"★".repeat(5 - item.rating)}
+          </span>
+        </div>
+
+        {item.genre && <p className="review-card__genre">{item.genre}</p>}
+
+        <blockquote
+          className={`review-card__text ${
+            expanded ? "" : "review-card__text--clamped"
+          }`}
+        >
+          “{item.review}”
+        </blockquote>
+        {isLong && (
+          <button
+            type="button"
+            className="review-card__toggle"
+            onClick={() => setExpanded((v) => !v)}
+          >
+            {expanded ? "Show less" : "Read more"}
+          </button>
+        )}
+
+        <div className="review-card__actions">
+          <button
+            type="button"
+            className="review-card__action"
+            title="Edit review"
+            onClick={() => setShowLogModal(true)}
+          >
+            ✏️
+          </button>
+          <button
+            type="button"
+            className={`review-card__action ${
+              item.liked ? "review-card__action--active" : ""
+            }`}
+            title="Like"
+            onClick={() => onUpdate(item.id, { liked: !item.liked })}
+          >
+            {item.liked ? "❤️" : "🤍"}
+          </button>
+          {confirmingDelete ? (
+            <span className="review-card__confirm">
+              Delete?
+              <button
+                type="button"
+                className="btn btn--tiny btn--danger"
+                onClick={() => onDelete(item.id)}
+              >
+                Yes
+              </button>
+              <button
+                type="button"
+                className="btn btn--tiny btn--ghost"
+                onClick={() => setConfirmingDelete(false)}
+              >
+                No
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              className="review-card__action"
+              title="Delete"
+              onClick={() => setConfirmingDelete(true)}
+            >
+              🗑️
+            </button>
+          )}
+        </div>
+      </div>
+
+      {showLogModal && (
+        <LogEntryModal
+          item={item}
+          onClose={() => setShowLogModal(false)}
+          onSave={async (changes) => {
+            await onUpdate(item.id, changes);
+          }}
+          onDelete={() => {
+            onDelete(item.id);
+          }}
+        />
+      )}
+    </article>
+  );
+}
+
+class ModalBoundary extends Component {
+  state = { error: null };
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  render() {
+    if (this.state.error) {
+      return createPortal(
+        <div className="modal-overlay" onClick={this.props.onClose}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <p className="banner banner--error">
+              Episode editor crashed: {String(this.state.error?.message)}
+            </p>
+            <button
+              type="button"
+              className="btn btn--ghost btn--tiny"
+              onClick={this.props.onClose}
+            >
+              Close
+            </button>
+          </div>
+        </div>,
+        document.body,
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const hasGenre = (genreStr, filter) =>
+  filter === "all" ||
+  (genreStr || "")
+    .split(",")
+    .map((g) => g.trim().toLowerCase())
+    .includes(filter.toLowerCase());
+
+function Stars({ value }) {
+  const n = Math.max(0, Math.min(5, Math.round(value || 0)));
+  return (
+    <>
+      {"★".repeat(n)}
+      <span className="review-card__rating-empty">{"★".repeat(5 - n)}</span>
+    </>
+  );
+}
+
+function EpisodeReviewText({ text }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = text.length > 160;
+  return (
+    <>
+      <p
+        className={`season-episodes__text ${
+          isLong && !expanded ? "season-episodes__text--clamped" : ""
+        }`}
+      >
+        “{text}”
+      </p>
+      {isLong && (
+        <button
+          type="button"
+          className="review-card__toggle"
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {expanded ? "Show less" : "Read more"}
+        </button>
+      )}
+    </>
+  );
+}
+
+function SeasonReviewCard({ group, item, onOpenDetails, onChanged }) {
+  const [open, setOpen] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [showTracker, setShowTracker] = useState(false);
+  const { logs } = group;
+
+  const deleteSeason = async () => {
+    await Promise.all(
+      logs.map((l) =>
+        api.deleteEpisodeLog(l.item_id, l.season_number, l.episode_number),
+      ),
+    );
+    setConfirmingDelete(false);
+    onChanged();
+  };
+
+  const toggleLike = async (log) => {
+    await api.logEpisode(log.item_id, log.season_number, log.episode_number, {
+      rating: log.rating,
+      review: log.review,
+      liked: !log.liked,
+      watched_at: log.watched_at || "",
+    });
+    onChanged();
+  };
+
+  const deleteEpisode = async (log) => {
+    if (!window.confirm(`Delete your review of E${log.episode_number}?`))
+      return;
+    await api.deleteEpisodeLog(
+      log.item_id,
+      log.season_number,
+      log.episode_number,
+    );
+    onChanged();
+  };
+
+  return (
+    <article className="review-card">
+      <button
+        className="review-card__poster-btn"
+        onClick={() => item && onOpenDetails(item)}
+        aria-label={`View details for ${group.title}`}
+      >
+        {group.poster_url ? (
+          <img src={group.poster_url} alt="" className="review-card__poster" />
+        ) : (
+          <div className="review-card__poster review-card__poster--empty">
+            🎬
+          </div>
+        )}
+      </button>
+
+      <div className="review-card__body">
+        <div className="review-card__header">
+          <h3 className="review-card__title">
+            {group.title} · Season {group.season_number}
+          </h3>
+          <span className="review-card__time">
+            Reviewed {relativeTime(group.date)}
+          </span>
+        </div>
+
+        <div className="review-card__rating">
+          <Stars value={group.avg} />
+          <span className="season-meta">
+            {logs.length} episode review{logs.length !== 1 ? "s" : ""}
+          </span>
+        </div>
+
+        {group.genre && <p className="review-card__genre">{group.genre}</p>}
+
+        <button
+          type="button"
+          className="review-card__toggle"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+        >
+          {open ? "Hide episodes ▴" : "Show episodes ▾"}
+        </button>
+
+        {open && (
+          <ul className="season-episodes">
+            {logs.map((log) => (
+              <li key={log.id} className="season-episodes__row">
+                <div className="season-episodes__head">
+                  <span className="season-episodes__ep">
+                    E{log.episode_number}
+                  </span>
+                  <span className="review-card__rating">
+                    <Stars value={log.rating} />
+                  </span>
+                  <span className="season-episodes__actions">
+                    <button
+                      type="button"
+                      className={`review-card__action ${
+                        log.liked ? "review-card__action--active" : ""
+                      }`}
+                      title="Like"
+                      onClick={() => toggleLike(log)}
+                    >
+                      {log.liked ? "❤️" : "🤍"}
+                    </button>
+                    <button
+                      type="button"
+                      className="review-card__action"
+                      title="Delete episode review"
+                      onClick={() => deleteEpisode(log)}
+                    >
+                      🗑️
+                    </button>
+                  </span>
+                </div>
+                {log.review && <EpisodeReviewText text={log.review} />}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <div className="review-card__actions">
+          <button
+            type="button"
+            className="review-card__action"
+            title="Edit episode reviews"
+            onClick={() => setShowTracker(true)}
+          >
+            ✏️
+          </button>
+          {confirmingDelete ? (
+            <span className="review-card__confirm">
+              Delete season reviews?
+              <button
+                type="button"
+                className="btn btn--tiny btn--danger"
+                onClick={deleteSeason}
+              >
+                Yes
+              </button>
+              <button
+                type="button"
+                className="btn btn--tiny btn--ghost"
+                onClick={() => setConfirmingDelete(false)}
+              >
+                No
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              className="review-card__action"
+              title="Delete season reviews"
+              onClick={() => setConfirmingDelete(true)}
+            >
+              🗑️
+            </button>
+          )}
+        </div>
+      </div>
+
+      {showTracker &&
+        item &&
+        createPortal(
+          <ModalBoundary
+            onClose={() => {
+              setShowTracker(false);
+              onChanged();
+            }}
+          >
+            <EpisodeTrackerModal
+              item={item}
+              onClose={() => {
+                setShowTracker(false);
+                onChanged();
+              }}
+            />
+          </ModalBoundary>,
+          document.body,
+        )}
+    </article>
+  );
+}
+
+export default function ReviewsPage({
+  items,
+  onOpenDetails,
+  onUpdate,
+  onDelete,
+}) {
+  const [sortBy, setSortBy] = useState("recent");
+  const [genreFilter, setGenreFilter] = useState("all");
+  const [episodeLogs, setEpisodeLogs] = useState([]);
+
+  const loadEpisodeLogs = () =>
+    api
+      .getEpisodeReviews()
+      .then(setEpisodeLogs)
+      .catch(() => {});
+
+  useEffect(() => {
+    loadEpisodeLogs();
+  }, []);
+
+  const reviewed = items.filter((it) => it.status === "completed" && it.review);
+
+  const genres = useMemo(() => {
+    const set = new Set();
+    [...reviewed, ...episodeLogs].forEach((it) => {
+      (it.genre || "")
+        .split(",")
+        .map((g) => g.trim())
+        .filter(Boolean)
+        .forEach((g) => set.add(g));
+    });
+    return [...set].sort();
+  }, [reviewed, episodeLogs]);
+
+  const seasonGroups = useMemo(() => {
+    const map = new Map();
+    episodeLogs
+      .filter((log) => hasGenre(log.genre, genreFilter))
+      .forEach((log) => {
+        const key = `${log.item_id}-${log.season_number}`;
+        if (!map.has(key)) {
+          map.set(key, {
+            key,
+            item_id: log.item_id,
+            season_number: log.season_number,
+            title: log.title,
+            poster_url: log.poster_url,
+            genre: log.genre,
+            logs: [],
+          });
+        }
+        map.get(key).logs.push(log);
+      });
+
+    return [...map.values()].map((g) => {
+      g.logs.sort((a, b) => a.episode_number - b.episode_number);
+      const rated = g.logs.filter((l) => l.rating > 0);
+      g.avg = rated.length
+        ? rated.reduce((sum, l) => sum + l.rating, 0) / rated.length
+        : 0;
+      g.date = new Date(
+        Math.max(...g.logs.map((l) => new Date(l.watched_at || l.created_at))),
+      );
+      return g;
+    });
+  }, [episodeLogs, genreFilter]);
+
+  const visible = reviewed
+    .filter((it) => hasGenre(it.genre, genreFilter))
+    .sort((a, b) => {
+      if (sortBy === "rating") return b.rating - a.rating;
+      if (sortBy === "title") return a.title.localeCompare(b.title);
+      const aDate = new Date(a.watched_at || a.created_at);
+      const bDate = new Date(b.watched_at || b.created_at);
+      return bDate - aDate;
+    });
+
+  if (reviewed.length === 0 && episodeLogs.length === 0) {
+    return (
+      <div className="empty-state">
+        <p>No reviews yet. Write one from any completed title.</p>
+      </div>
+    );
+  }
+
+  const total = visible.length + seasonGroups.length;
+
+  return (
+    <div className="reviews-page">
+      <div className="reviews-toolbar">
+        <label className="reviews-toolbar__field">
+          <span>Sort by</span>
+          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+            <option value="recent">Recently watched</option>
+            <option value="rating">Rating (high to low)</option>
+            <option value="title">Title (A–Z)</option>
+          </select>
+        </label>
+
+        {genres.length > 0 && (
+          <label className="reviews-toolbar__field">
+            <span>Genre</span>
+            <select
+              value={genreFilter}
+              onChange={(e) => setGenreFilter(e.target.value)}
+            >
+              <option value="all">All genres</option>
+              {genres.map((g) => (
+                <option key={g} value={g}>
+                  {g}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        <span className="reviews-toolbar__count">
+          {total} review{total !== 1 ? "s" : ""}
+        </span>
+      </div>
+
+      {[
+        ...visible.map((item) => ({
+          date: new Date(item.watched_at || item.created_at),
+          node: (
+            <ReviewCard
+              key={`item-${item.id}`}
+              item={item}
+              onOpenDetails={onOpenDetails}
+              onUpdate={onUpdate}
+              onDelete={onDelete}
+            />
+          ),
+        })),
+        ...seasonGroups.map((g) => ({
+          date: g.date,
+          node: (
+            <SeasonReviewCard
+              key={`season-${g.key}`}
+              group={g}
+              item={items.find((it) => it.id === g.item_id)}
+              onOpenDetails={onOpenDetails}
+              onChanged={loadEpisodeLogs}
+            />
+          ),
+        })),
+      ]
+        .sort((a, b) => b.date - a.date)
+        .map((entry) => entry.node)}
+    </div>
+  );
+}
+</file>
+
+<file path="frontend/src/components/Topfive.jsx">
+const RANKS = [1, 2, 3, 4, 5];
+
+export default function TopFive({ items, onOpenDetails, mediaType = "movie", title }) {
+  const byRank = {};
+  for (const item of items) {
+    const itemType = item.media_type === "tv" ? "tv" : "movie";
+    if (itemType !== mediaType) continue;
+    if (item.favorite_rank) byRank[item.favorite_rank] = item;
+  }
+
+  return (
+    <section className="top-five">
+      <div className="top-five__header">
+        <h2>{title || (mediaType === "tv" ? "5 Favorite TV Shows" : "5 Favorite Films")}</h2>
+      </div>
+
+      <div className="top-five__shelf">
+        {RANKS.map((rank) => {
+          const item = byRank[rank];
+          return (
+            <div className="top-five__slot" key={rank}>
+              <span className="top-five__rank">{rank}</span>
+
+              {item ? (
+                <>
+                  <div className="top-five__poster-wrap">
+                    <button
+                      className="top-five__poster-btn"
+                      onClick={() => onOpenDetails(item)}
+                      aria-label={`View details for ${item.title}`}
+                      title="View details"
+                    >
+                      {item.poster_url ? (
+                        <img
+                          src={item.poster_url}
+                          alt=""
+                          className="top-five__poster"
+                        />
+                      ) : (
+                        <div className="top-five__poster top-five__poster--empty">
+                          {mediaType === "tv" ? "📺" : "🎬"}
+                        </div>
+                      )}
+                    </button>
+                  </div>
+                  <p className="top-five__title">{item.title}</p>
+                </>
+              ) : (
+                <div className="top-five__poster top-five__poster--placeholder">
+                  +
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 </file>
@@ -9482,240 +10316,266 @@ select {
   border-radius: 6px;
   font-size: 0.8rem;
 }
-</file>
 
-<file path="frontend/src/main.jsx">
-import React from "react";
-import ReactDOM from "react-dom/client";
-import App from "./App.jsx";
-import "./index.css";
+/* ---------- Collections page: poster chips + searchable add-picker ----------
+   Appended for the Collections redesign. Scoped to .collection-card,
+   .challenge-card and .collection-picker so nothing else is affected. */
 
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch(() => {});
-  });
+.collection-card__meta-actions,
+.challenge-card__meta-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-);
-</file>
+.icon-btn {
+  border: 0;
+  background: transparent;
+  color: var(--text-soft);
+  cursor: pointer;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0.2rem 0.35rem;
+  border-radius: 4px;
+}
 
-<file path="frontend/index.html">
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta
-      name="description"
-      content="Track, rate, and discover your favorite movies and TV shows."
-    />
-    <meta name="theme-color" content="#150c2e" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta
-      name="apple-mobile-web-app-status-bar-style"
-      content="black-translucent"
-    />
-    <meta name="apple-mobile-web-app-title" content="Watchlist" />
-    <link rel="manifest" href="/manifest.webmanifest" />
-    <title>WATCHLIST</title>
+.icon-btn:hover {
+  color: #fca5a5;
+  background: rgba(252, 165, 165, 0.12);
+}
 
-    <!-- Favicon -->
-    <link rel="icon" type="image/png" href="/favicon.png" />
+.poster-chip-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(34px, 1fr));
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+}
 
-    <!-- Google Fonts Preconnect -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=Karla:wght@400;500;600;700&family=Monoton&family=Michroma&family=Plus+Jakarta+Sans:wght@700;800&display=swap"
-      rel="stylesheet"
-    />
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
-</html>
-</file>
+.poster-chip {
+  position: relative;
+}
 
-<file path="frontend/package.json">
-{
-  "name": "watchlist-tracker-frontend",
-  "private": true,
-  "version": "1.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
-  },
-  "devDependencies": {
-    "@vitejs/plugin-react": "^4.3.1",
-    "vite": "^5.4.1"
+.poster-chip img,
+.poster-chip__empty {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: 4px;
+  background: var(--espresso);
+  display: block;
+}
+
+.poster-chip__empty {
+  display: grid;
+  place-items: center;
+  font-size: 0.8rem;
+}
+
+.poster-chip__remove {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 15px;
+  height: 15px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(12, 8, 24, 0.9);
+  color: white;
+  font-size: 0.5rem;
+  line-height: 1;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  opacity: 0;
+  transform: scale(0.85);
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease;
+}
+
+.poster-chip:hover .poster-chip__remove,
+.poster-chip:focus-within .poster-chip__remove {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.poster-chip__remove:hover {
+  background: var(--accent-dark);
+}
+
+.poster-chip__remove:focus-visible {
+  opacity: 1;
+  transform: scale(1);
+  outline: 2px solid var(--gold);
+  outline-offset: 1px;
+}
+
+@media (hover: none) {
+  /* Touch devices can't hover, so keep the remove control reachable. */
+  .poster-chip__remove {
+    opacity: 1;
+    transform: none;
+    background: rgba(12, 8, 24, 0.75);
   }
 }
-</file>
 
-<file path="frontend/vite.config.js">
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
+.collection-card__desc {
+  margin: 0.35rem 0 0;
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
 
-export default defineConfig({
-  plugins: [react()],
-  server: {
-    port: 5173,
-  },
-});
-</file>
+.inline-create--stacked {
+  flex-direction: column;
+  align-items: stretch;
+}
 
-<file path=".gitignore">
-# Backend
-backend/__pycache__/
-backend/watchlist.db
-*.pyc
+.inline-create--stacked textarea {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.55rem 0.75rem;
+  background: #1c1338;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  resize: vertical;
+  min-height: 2.5rem;
+}
 
-# Frontend
-frontend/node_modules/
-frontend/dist/
+.inline-create--stacked textarea:focus {
+  outline: 0;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(192, 132, 252, 0.18);
+}
 
-# Editor/OS
-.DS_Store
-.vscode/
+.inline-create--stacked textarea::placeholder {
+  color: var(--text-soft);
+  opacity: 0.7;
+}
 
-#API TMDB
-backend/.env
-</file>
+.inline-create--stacked button {
+  align-self: flex-end;
+}
 
-<file path="LICENSE">
-MIT License
+.inline-create--stacked button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
-Copyright (c) 2026 Noetzki D. Antolijao
+.collection-card__add-btn {
+  display: block;
+  width: 100%;
+  margin-top: 0.75rem;
+  border: 1px solid var(--card-edge);
+  border-radius: 999px;
+  padding: 0.42rem 0.6rem;
+  background: transparent;
+  color: var(--text-soft);
+  cursor: pointer;
+  font-size: 0.75rem;
+}
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+.collection-card__add-btn:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+}
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+.collection-card__add-btn.is-open {
+  border-color: var(--accent-dark);
+  color: var(--accent-dark);
+}
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-</file>
+.collection-picker {
+  margin-top: 0.6rem;
+}
 
-<file path="README.md">
-# The Watchlist — Movie/Anime Tracker
+.collection-picker__search {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--card-edge);
+  border-radius: 5px;
+  padding: 0.42rem 0.55rem;
+  background: var(--espresso);
+  color: var(--text);
+  font-size: 0.8rem;
+}
 
-A cozy, brown-themed watchlist tracker.
+.collection-picker__search:focus {
+  outline: 0;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(192, 132, 252, 0.18);
+}
 
-- **Frontend:** React (Vite)
-- **Backend:** Python (Flask) + SQLite — your data is saved to a real database file, so it persists between restarts.
+.collection-picker__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  max-height: 200px;
+  overflow-y: auto;
+}
 
-Fields per item: title, genre, status (`watching` / `plan to watch` / `completed`), rating (0–5 stars).
+.collection-picker__row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0.3rem 0.25rem;
+  border-radius: 5px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text);
+  font-size: 0.8rem;
+}
 
-## Project layout
+.collection-picker__row:hover {
+  background: var(--espresso);
+}
 
-```
-watchlist-tracker/
-  backend/
-    app.py              Flask API + SQLite setup
-    requirements.txt
-  frontend/
-    index.html
-    package.json
-    vite.config.js
-    src/
-      main.jsx
-      App.jsx
-      index.css
-      api.js
-      components/
-        AddItemForm.jsx
-        FilterTabs.jsx
-        StarRating.jsx
-        WatchlistItem.jsx
-```
+.collection-picker__thumb,
+.collection-picker__thumb--empty {
+  width: 28px;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: 3px;
+  background: var(--espresso);
+  flex-shrink: 0;
+}
 
-## 1. Run the backend
+.collection-picker__thumb--empty {
+  display: grid;
+  place-items: center;
+  font-size: 0.7rem;
+}
 
-Requires Python 3.9+.
+.collection-picker__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
-```bash
-cd backend
-pip install -r requirements.txt
-python app.py
-```
+.collection-picker__mark {
+  flex-shrink: 0;
+  width: 1.1rem;
+  text-align: center;
+  color: var(--accent-dark);
+  font-weight: 700;
+}
 
-This starts the API at `http://localhost:5000`. On first run it creates `watchlist.db`
-in the `backend/` folder — that file is your database, and it'll keep growing with
-your data across restarts. Delete it any time to start fresh.
-
-Quick check it's alive: open `http://localhost:5000/api/health` in a browser — you
-should see `{"status": "ok"}`.
-
-## 2. Run the frontend
-
-Requires Node.js 18+.
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-This starts the app at `http://localhost:5173`. Open that URL in your browser.
-
-## Running both together
-
-You need **two terminals open at the same time**:
-
-```bash
-# Terminal 1
-cd backend
-python app.py
-
-# Terminal 2
-cd frontend
-npm run dev
-```
-
-The frontend is hardcoded to call the API at `http://localhost:5000/api` (see
-`frontend/src/api.js`) — as long as the backend is running on port 5000, everything
-connects automatically. No extra config needed.
-
-## Using the app
-
-- Click **+ Add title** to add a movie or anime, with genre, status, and star rating.
-- Click stars on any card to update its rating instantly.
-- Use the status dropdown on a card to move it between Watching / Plan to Watch / Completed.
-- Use the tabs to filter the list.
-- Click the ✕ on a card to remove it (with a confirm step).
-
-## Notes on the database
-
-`watchlist.db` is a plain SQLite file — you can open it with any SQLite browser
-(e.g. [DB Browser for SQLite](https://sqlitebrowser.org/)) if you ever want to look
-at or edit your data directly. To back up your watchlist, just copy that file.
-
-## Deploying / using on a different machine
-
-If you ever run the backend somewhere other than `localhost:5000`, update the
-`BASE_URL` constant at the top of `frontend/src/api.js` to match.
+.collection-picker__empty {
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  padding: 0.4rem 0.25rem;
+  margin: 0;
+}
 </file>
 
 <file path="backend/app.py">
@@ -10616,441 +11476,6 @@ def profile_talent():
 if __name__ == "__main__":
     init_db()
     app.run(debug=True, host="0.0.0.0", port=5000)
-</file>
-
-<file path="frontend/src/components/DiscoverPage.jsx">
-import { useEffect, useMemo, useState } from "react";
-import { api } from "../api.js";
-
-function LoadingRail({ title }) {
-  return (
-    <section
-      className="feature-section discovery-loading-rail"
-      aria-label={`Loading ${title}`}
-    >
-      <div className="feature-section__heading">
-        <h2>{title}</h2>
-        <span className="discovery-loading-label">Loading</span>
-      </div>
-      <div className="discovery-grid discovery-grid--scroll">
-        {[1, 2, 3, 4, 5, 6].map((placeholder) => (
-          <div className="discovery-skeleton" key={placeholder} />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function Feed({
-  title,
-  items,
-  onAdd,
-  watchlistKeys,
-  headingExtra,
-  compact = false,
-  onLoadMore,
-  loadingMore,
-}) {
-  if (!items.length)
-    return <p className="empty-state">Nothing to show right now.</p>;
-  return (
-    <section className="feature-section">
-      <div className="feature-section__heading">
-        <div className="discovery-heading-title">
-          <h2>{title}</h2>
-          {headingExtra}
-        </div>
-        <span>{items.length} titles</span>
-      </div>
-      <div className="discovery-grid discovery-grid--scroll">
-        {items.map((item) => {
-          const key = `${item.media_type}-${item.tmdb_id}`;
-          const added = watchlistKeys.has(key);
-          return (
-            <article
-              className={`discovery-card ${compact ? "discovery-card--compact" : ""}`}
-              key={key}
-            >
-              <div className="discovery-card__poster-wrap">
-                {item.poster_url ? (
-                  <img
-                    src={item.poster_url}
-                    alt=""
-                    className="discovery-card__poster-img"
-                  />
-                ) : (
-                  <div className="discovery-card__poster discovery-card__poster--empty">
-                    🎬
-                  </div>
-                )}
-                <button
-                  type="button"
-                  className={`discovery-card__add ${added ? "discovery-card__add--added" : ""}`}
-                  disabled={added}
-                  onClick={() => onAdd(item)}
-                  aria-label={
-                    added ? "Already in watchlist" : "Add to watchlist"
-                  }
-                  title={added ? "Already in watchlist" : "Add to watchlist"}
-                >
-                  {added ? "✓" : "+"}
-                </button>
-                {item.vote_average > 0 && (
-                  <span
-                    className="discovery-card__score"
-                    title="TMDB community rating"
-                  >
-                    ★ {item.vote_average.toFixed(1)}
-                  </span>
-                )}
-                {item.year && (
-                  <span className="discovery-card__year-pill">{item.year}</span>
-                )}
-              </div>
-              <div className="discovery-card__body">
-                <h3>{item.title}</h3>
-                <p className="discovery-card__date">
-                  {item.release_date
-                    ? new Date(
-                        `${item.release_date}T12:00:00`,
-                      ).toLocaleDateString(undefined, {
-                        month: "long",
-                        day: "numeric",
-                        year: "numeric",
-                      })
-                    : item.year || "Release date unknown"}
-                </p>
-                <span className="discovery-card__type">
-                  {item.media_type === "tv" ? "TV show" : "Movie"}
-                </span>
-                {item.reason && (
-                  <small className="discovery-card__reason">
-                    {item.reason}
-                  </small>
-                )}
-              </div>
-            </article>
-          );
-        })}
-      </div>
-      <button
-        className="discovery-load-more"
-        type="button"
-        onClick={onLoadMore}
-        disabled={loadingMore}
-      >
-        {loadingMore ? "Loading..." : "Load more"}
-      </button>
-    </section>
-  );
-}
-
-export default function DiscoverPage({ items, onAdd }) {
-  const [feeds, setFeeds] = useState({
-    recommendations: [],
-    trending: [],
-    upcoming: [],
-  });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [mediaType, setMediaType] = useState("all");
-  const [releaseYear, setReleaseYear] = useState("all");
-  const [trendingWindow, setTrendingWindow] = useState("week");
-  const [pages, setPages] = useState({
-    recommendations: 1,
-    trending: 1,
-    upcoming: 1,
-  });
-  const [loadingMore, setLoadingMore] = useState("");
-  const watchlistKeys = useMemo(
-    () =>
-      new Set(
-        items
-          .filter((item) => item.tmdb_id)
-          .map((item) => `${item.media_type || "movie"}-${item.tmdb_id}`),
-      ),
-    [items],
-  );
-  const topGenres = useMemo(() => {
-    const counts = {};
-    items.forEach((item) =>
-      (item.genre || "").split(",").forEach((genre) => {
-        const key = genre.trim();
-        if (key) counts[key] = (counts[key] || 0) + (item.rating || 1);
-      }),
-    );
-    return Object.entries(counts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)
-      .map(([genre]) => genre)
-      .join(",");
-  }, [items]);
-
-  useEffect(() => {
-    let cancelled = false;
-    api.discover("recommendations", topGenres).then((data) => {
-      if (!cancelled) {
-        setFeeds((f) => ({ ...f, recommendations: data }));
-        setPages((p) => ({ ...p, recommendations: 1 }));
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [topGenres]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    Promise.all([
-      api.discover("trending", "", trendingWindow),
-      api.discover("upcoming"),
-    ])
-      .then(([trending, upcoming]) => {
-        if (!cancelled) {
-          setFeeds((f) => ({ ...f, trending, upcoming }));
-          setPages((p) => ({ ...p, trending: 1, upcoming: 1 }));
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err.message);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [trendingWindow]);
-
-  const years = useMemo(
-    () =>
-      [
-        ...new Set(
-          Object.values(feeds)
-            .flat()
-            .map((item) => item.year)
-
-            .filter(Boolean),
-        ),
-      ].sort((a, b) => b - a),
-    [feeds],
-  );
-  const filterItems = (feed) =>
-    feed.filter(
-      (item) =>
-        (mediaType === "all" || item.media_type === mediaType) &&
-        (releaseYear === "all" || item.year === releaseYear),
-    );
-  async function loadMore(section) {
-    setLoadingMore(section);
-    const nextPage = pages[section] + 1;
-    try {
-      const more = await api.discover(
-        section,
-        section === "recommendations" ? topGenres : "",
-        trendingWindow,
-        nextPage,
-      );
-
-      if (!Array.isArray(more) || more.length === 0) {
-        return;
-      }
-
-      setFeeds((current) => ({
-        ...current,
-        [section]: more,
-      }));
-
-      setPages((current) => ({ ...current, [section]: nextPage }));
-    } catch (err) {
-      setError(`Failed to load additional titles: ${err.message}`);
-    } finally {
-      setLoadingMore("");
-    }
-  }
-  return (
-    <div className="feature-page">
-      <header className="feature-page__intro">
-        <span className="feature-page__eyebrow">
-          <span className="feature-page__eyebrow-dot" />
-          Discover
-        </span>
-        <h1 className="feature-page__headline">
-          Discover your <span>next favorite</span>
-        </h1>
-        <p className="feature-page__lede">
-          Personalized picks shaped by your favorites and genre habits,
-          alongside what's moving now.
-        </p>
-      </header>
-      <div className="discovery-filters" aria-label="Recommendation filters">
-        <span className="discovery-filters__label">Show</span>
-        {[
-          ["all", "Everything"],
-          ["movie", "Movies"],
-          ["tv", "TV shows"],
-        ].map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            className={mediaType === value ? "active" : ""}
-            onClick={() => setMediaType(value)}
-          >
-            {label}
-          </button>
-        ))}
-        <label>
-          <span className="sr-only">Release year</span>
-          <select
-            value={releaseYear}
-            onChange={(event) => setReleaseYear(event.target.value)}
-          >
-            <option value="all">Any year</option>
-            {years.map((year) => (
-              <option key={year} value={year}>
-                {year}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      {error && <p className="banner banner--error">{error}</p>}
-      {loading && (
-        <div className="discovery-loading-state" aria-live="polite">
-          <LoadingRail title="Trending" />
-          <LoadingRail title="Picked for you" />
-        </div>
-      )}
-      {!loading && !error && (
-        <>
-          <Feed
-            title="Trending"
-            compact
-            headingExtra={
-              <div
-                className="trending-toggle"
-                role="group"
-                aria-label="Trending period"
-              >
-                <button
-                  className={trendingWindow === "day" ? "active" : ""}
-                  onClick={() => setTrendingWindow("day")}
-                  type="button"
-                >
-                  Today
-                </button>
-                <button
-                  className={trendingWindow === "week" ? "active" : ""}
-                  onClick={() => setTrendingWindow("week")}
-                  type="button"
-                >
-                  This Week
-                </button>
-              </div>
-            }
-            items={filterItems(feeds.trending)}
-            onAdd={onAdd}
-            watchlistKeys={watchlistKeys}
-            onLoadMore={() => loadMore("trending")}
-            loadingMore={loadingMore === "trending"}
-          />
-          <Feed
-            title="Picked for you"
-            compact
-            items={filterItems(feeds.recommendations)}
-            onAdd={onAdd}
-            watchlistKeys={watchlistKeys}
-            onLoadMore={() => loadMore("recommendations")}
-            loadingMore={loadingMore === "recommendations"}
-          />
-          <Feed
-            title="Top Sci-Fi"
-            items={filterItems(
-              feeds.trending.filter((item) =>
-                (item.genre || "").toLowerCase().includes("sci-fi"),
-              ),
-            )}
-            onAdd={onAdd}
-            watchlistKeys={watchlistKeys}
-            onLoadMore={() => loadMore("trending")}
-            loadingMore={loadingMore === "trending"}
-          />
-          <Feed
-            title="Upcoming releases"
-            items={filterItems(feeds.upcoming)}
-            onAdd={onAdd}
-            watchlistKeys={watchlistKeys}
-            onLoadMore={() => loadMore("upcoming")}
-            loadingMore={loadingMore === "upcoming"}
-          />
-        </>
-      )}
-    </div>
-  );
-}
-</file>
-
-<file path="frontend/src/components/Topfive.jsx">
-const RANKS = [1, 2, 3, 4, 5];
-
-export default function TopFive({ items, onOpenDetails, mediaType = "movie", title }) {
-  const byRank = {};
-  for (const item of items) {
-    const itemType = item.media_type === "tv" ? "tv" : "movie";
-    if (itemType !== mediaType) continue;
-    if (item.favorite_rank) byRank[item.favorite_rank] = item;
-  }
-
-  return (
-    <section className="top-five">
-      <div className="top-five__header">
-        <h2>{title || (mediaType === "tv" ? "5 Favorite TV Shows" : "5 Favorite Films")}</h2>
-      </div>
-
-      <div className="top-five__shelf">
-        {RANKS.map((rank) => {
-          const item = byRank[rank];
-          return (
-            <div className="top-five__slot" key={rank}>
-              <span className="top-five__rank">{rank}</span>
-
-              {item ? (
-                <>
-                  <div className="top-five__poster-wrap">
-                    <button
-                      className="top-five__poster-btn"
-                      onClick={() => onOpenDetails(item)}
-                      aria-label={`View details for ${item.title}`}
-                      title="View details"
-                    >
-                      {item.poster_url ? (
-                        <img
-                          src={item.poster_url}
-                          alt=""
-                          className="top-five__poster"
-                        />
-                      ) : (
-                        <div className="top-five__poster top-five__poster--empty">
-                          {mediaType === "tv" ? "📺" : "🎬"}
-                        </div>
-                      )}
-                    </button>
-                  </div>
-                  <p className="top-five__title">{item.title}</p>
-                </>
-              ) : (
-                <div className="top-five__poster top-five__poster--placeholder">
-                  +
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
 </file>
 
 <file path="frontend/src/App.jsx">

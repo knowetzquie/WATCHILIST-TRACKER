@@ -920,7 +920,7 @@ select {
 }
 
 .top-five__header h2 {
-  font-family: "Monoton", system-ui;
+  font-family: "Fraunces", system-ui;
   font-weight: 400;
   letter-spacing: 0.02em;
   font-size: 1.6rem;
@@ -5305,4 +5305,164 @@ select {
   font-size: 0.78rem;
   padding: 0.4rem 0.25rem;
   margin: 0;
+}
+
+/* ---------- Playlist edit form ---------- */
+
+.collection-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.collection-edit input,
+.collection-edit textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.55rem 0.7rem;
+  background: #1c1338;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+  resize: vertical;
+}
+
+.collection-edit input:focus,
+.collection-edit textarea:focus {
+  outline: 0;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(192, 132, 252, 0.18);
+}
+
+.collection-edit__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+/* ---------- See more / show less ---------- */
+
+.poster-chip-more {
+  display: block;
+  margin: 0.6rem auto 0;
+  border: 0;
+  background: transparent;
+  color: var(--gold);
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  transition: background 0.15s ease;
+}
+
+.poster-chip-more:hover {
+  background: rgba(192, 132, 252, 0.14);
+}
+
+/* ---------- Collections popups ---------- */
+
+.collections-modal {
+  max-width: 560px;
+}
+
+.collections-modal__title {
+  margin: 0 2.2rem 0.25rem 0;
+  font-size: 1.3rem;
+}
+
+.collections-modal__sub {
+  margin: 0 0 0.9rem;
+  color: var(--text-soft);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.collections-modal__count {
+  margin: 0 0 0.75rem;
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.collections-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+
+/* full poster grid ("See more") */
+.view-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 0.9rem 0.7rem;
+}
+
+.view-grid__item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.view-grid__item img,
+.view-grid__empty {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--espresso);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.view-grid__item span {
+  font-size: 0.72rem;
+  line-height: 1.3;
+  color: var(--text-soft);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* add-titles list inside the popup */
+.collection-picker--modal {
+  margin-top: 0;
+}
+
+.collection-picker--modal .collection-picker__list {
+  max-height: 50vh;
+}
+
+.collection-picker--modal .collection-picker__row {
+  padding: 0.4rem 0.5rem;
+}
+
+.collection-picker__row:hover,
+.collection-picker__row--on {
+  background: rgba(192, 132, 252, 0.12);
+}
+
+/* edit form labels */
+.collection-edit__label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+}
+
+.collection-edit__label input,
+.collection-edit__label textarea {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
 }
