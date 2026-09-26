@@ -3529,346 +3529,6 @@ export default function AddItemForm({ onAdd }) {
 }
 </file>
 
-<file path="frontend/src/components/CollectionsPage.jsx">
-import { useEffect, useMemo, useState } from "react";
-
-const STORAGE_KEY = "watchlist-collections-v1";
-const CHALLENGE_KEY = "watchlist-challenges-v1";
-
-function read(key, fallback) {
-  try {
-    return JSON.parse(localStorage.getItem(key)) || fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-export default function CollectionsPage({ items }) {
-  const [collections, setCollections] = useState(() => read(STORAGE_KEY, []));
-  const [challenges, setChallenges] = useState(() => read(CHALLENGE_KEY, []));
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [challengeName, setChallengeName] = useState("");
-  const [challengeGoal, setChallengeGoal] = useState(10);
-  const [openPickerId, setOpenPickerId] = useState(null);
-  const [pickerQuery, setPickerQuery] = useState("");
-
-  const completed = useMemo(
-    () => items.filter((item) => item.status === "completed"),
-    [items],
-  );
-  const itemsById = useMemo(
-    () => new Map(items.map((item) => [item.id, item])),
-    [items],
-  );
-
-  useEffect(
-    () => localStorage.setItem(STORAGE_KEY, JSON.stringify(collections)),
-    [collections],
-  );
-  useEffect(
-    () => localStorage.setItem(CHALLENGE_KEY, JSON.stringify(challenges)),
-    [challenges],
-  );
-
-  function createCollection(event) {
-    event.preventDefault();
-    const title = name.trim();
-    const summary = description.trim();
-    if (!title || !summary) return;
-    setCollections((current) => [
-      ...current,
-      {
-        id: crypto.randomUUID(),
-        name: title,
-        description: summary,
-        itemIds: [],
-      },
-    ]);
-    setName("");
-    setDescription("");
-  }
-  function deleteCollection(collectionId) {
-    setCollections((current) =>
-      current.filter((collection) => collection.id !== collectionId),
-    );
-    if (openPickerId === collectionId) {
-      setOpenPickerId(null);
-      setPickerQuery("");
-    }
-  }
-  function toggleItem(collectionId, itemId) {
-    setCollections((current) =>
-      current.map((collection) =>
-        collection.id !== collectionId
-          ? collection
-          : {
-              ...collection,
-              itemIds: collection.itemIds.includes(itemId)
-                ? collection.itemIds.filter((id) => id !== itemId)
-                : [...collection.itemIds, itemId],
-            },
-      ),
-    );
-  }
-  function togglePicker(collectionId) {
-    setOpenPickerId((current) =>
-      current === collectionId ? null : collectionId,
-    );
-    setPickerQuery("");
-  }
-  function createChallenge(event) {
-    event.preventDefault();
-    const title = challengeName.trim();
-    if (!title || Number(challengeGoal) < 1) return;
-    setChallenges((current) => [
-      ...current,
-      { id: crypto.randomUUID(), name: title, goal: Number(challengeGoal) },
-    ]);
-    setChallengeName("");
-    setChallengeGoal(10);
-  }
-  function deleteChallenge(challengeId) {
-    setChallenges((current) =>
-      current.filter((challenge) => challenge.id !== challengeId),
-    );
-  }
-
-  return (
-    <div className="feature-page">
-      <header className="feature-page__intro">
-        <span className="feature-page__eyebrow">
-          <span className="feature-page__eyebrow-dot" />
-          Collections
-        </span>
-        <h1 className="feature-page__headline">
-          Build your <span>own shelves</span>
-        </h1>
-        <p className="feature-page__lede">
-          Group titles by mood, theme, director, or the challenge you are
-          chasing.
-        </p>
-      </header>
-      <div className="feature-columns">
-        <section className="feature-section">
-          <div className="feature-section__heading">
-            <h2>Themed playlists</h2>
-            <span>{collections.length}</span>
-          </div>
-          <form
-            className="inline-create inline-create--stacked"
-            onSubmit={createCollection}
-          >
-            <input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Mind-bending thrillers"
-              aria-label="Collection name"
-            />
-            <textarea
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              placeholder="What ties this list together? e.g. Twisty plots that mess with your head."
-              aria-label="Collection description"
-              rows={2}
-            />
-            <button
-              type="submit"
-              disabled={!name.trim() || !description.trim()}
-            >
-              Create list
-            </button>
-          </form>
-          {collections.length === 0 ? (
-            <p className="empty-state">Create your first collection.</p>
-          ) : (
-            collections.map((collection) => {
-              const isOpen = openPickerId === collection.id;
-              const query = pickerQuery.trim().toLowerCase();
-              const filteredItems = isOpen
-                ? items.filter((item) =>
-                    item.title.toLowerCase().includes(query),
-                  )
-                : [];
-              return (
-                <article className="collection-card" key={collection.id}>
-                  <div>
-                    <h3>{collection.name}</h3>
-                    <div className="collection-card__meta-actions">
-                      <span>{collection.itemIds.length} titles</span>
-                      <button
-                        type="button"
-                        className="icon-btn"
-                        aria-label={`Delete ${collection.name}`}
-                        title="Delete collection"
-                        onClick={() => deleteCollection(collection.id)}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </div>
-                  {collection.description && (
-                    <p className="collection-card__desc">
-                      {collection.description}
-                    </p>
-                  )}
-
-                  {collection.itemIds.length > 0 && (
-                    <div className="poster-chip-row">
-                      {collection.itemIds.map((itemId) => {
-                        const item = itemsById.get(itemId);
-                        if (!item) return null;
-                        return (
-                          <div className="poster-chip" key={itemId}>
-                            {item.poster_url ? (
-                              <img src={item.poster_url} alt="" />
-                            ) : (
-                              <div className="poster-chip__empty">🎬</div>
-                            )}
-                            <button
-                              type="button"
-                              className="poster-chip__remove"
-                              aria-label={`Remove ${item.title} from ${collection.name}`}
-                              title={`Remove ${item.title}`}
-                              onClick={() => toggleItem(collection.id, itemId)}
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    className={
-                      isOpen
-                        ? "collection-card__add-btn is-open"
-                        : "collection-card__add-btn"
-                    }
-                    onClick={() => togglePicker(collection.id)}
-                  >
-                    {isOpen ? "Done" : "+ Add titles"}
-                  </button>
-
-                  {isOpen && (
-                    <div className="collection-picker">
-                      <input
-                        className="collection-picker__search"
-                        value={pickerQuery}
-                        onChange={(event) => setPickerQuery(event.target.value)}
-                        placeholder="Search your titles"
-                        aria-label={`Search titles to add to ${collection.name}`}
-                        autoFocus
-                      />
-                      <div className="collection-picker__list">
-                        {filteredItems.length === 0 ? (
-                          <p className="collection-picker__empty">
-                            No titles match “{pickerQuery}”.
-                          </p>
-                        ) : (
-                          filteredItems.map((item) => {
-                            const added = collection.itemIds.includes(item.id);
-                            return (
-                              <button
-                                type="button"
-                                key={item.id}
-                                className="collection-picker__row"
-                                onClick={() =>
-                                  toggleItem(collection.id, item.id)
-                                }
-                              >
-                                {item.poster_url ? (
-                                  <img
-                                    src={item.poster_url}
-                                    alt=""
-                                    className="collection-picker__thumb"
-                                  />
-                                ) : (
-                                  <div className="collection-picker__thumb--empty">
-                                    🎬
-                                  </div>
-                                )}
-                                <span className="collection-picker__title">
-                                  {item.title}
-                                </span>
-                                <span className="collection-picker__mark">
-                                  {added ? "✓" : "+"}
-                                </span>
-                              </button>
-                            );
-                          })
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </article>
-              );
-            })
-          )}
-        </section>
-        <section className="feature-section">
-          <div className="feature-section__heading">
-            <h2>Watch challenges</h2>
-            <span>{completed.length} completed</span>
-          </div>
-          <form className="inline-create" onSubmit={createChallenge}>
-            <input
-              value={challengeName}
-              onChange={(event) => setChallengeName(event.target.value)}
-              placeholder="50 films in 2026"
-              aria-label="Challenge name"
-            />
-            <input
-              type="number"
-              min="1"
-              value={challengeGoal}
-              onChange={(event) => setChallengeGoal(event.target.value)}
-              aria-label="Challenge goal"
-            />
-            <button type="submit">Add goal</button>
-          </form>
-          {challenges.length === 0 ? (
-            <p className="empty-state">Set a goal and make it yours.</p>
-          ) : (
-            challenges.map((challenge) => {
-              const progress = Math.min(completed.length, challenge.goal);
-              return (
-                <article className="challenge-card" key={challenge.id}>
-                  <div>
-                    <h3>{challenge.name}</h3>
-                    <div className="challenge-card__meta-actions">
-                      <strong>
-                        {progress} / {challenge.goal}
-                      </strong>
-                      <button
-                        type="button"
-                        className="icon-btn"
-                        aria-label={`Delete ${challenge.name}`}
-                        title="Delete challenge"
-                        onClick={() => deleteChallenge(challenge.id)}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </div>
-                  <div className="challenge-card__track">
-                    <span
-                      style={{ width: `${(progress / challenge.goal) * 100}%` }}
-                    />
-                  </div>
-                </article>
-              );
-            })
-          )}
-        </section>
-      </div>
-    </div>
-  );
-}
-</file>
-
 <file path="frontend/src/components/DiaryPage.jsx">
 import { useMemo, useState } from "react";
 
@@ -5267,6 +4927,1888 @@ export const api = {
 };
 </file>
 
+<file path="backend/app.py">
+"""
+Watchlist Tracker — backend API
+
+A small Flask app backed by SQLite. Stores movies/anime with a title,
+genre, status, rating, and an optional poster image. Data is persisted
+to watchlist.db in this same folder, so it survives restarts.
+
+Title search/autocomplete (with posters) is powered by TMDB
+(themoviedb.org). Put your API key in a `.env` file in this folder:
+    TMDB_API_KEY=your_key_here
+"""
+
+from flask import Flask, jsonify, request, g
+from flask_cors import CORS
+from dotenv import load_dotenv
+import sqlite3
+import os
+import math  
+import json
+import requests
+from datetime import datetime
+from collections import Counter
+
+load_dotenv()
+
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "watchlist.db")
+VALID_STATUSES = {"watching", "plan to watch", "completed"}
+
+TMDB_API_KEY = os.environ.get("TMDB_API_KEY", "")
+TMDB_BASE = "https://api.themoviedb.org/3"
+TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w200"
+
+app = Flask(__name__)
+CORS(app)
+
+
+def get_db():
+    if "db" not in g:
+        g.db = sqlite3.connect(DB_PATH)
+        g.db.row_factory = sqlite3.Row
+        g.db.execute("PRAGMA foreign_keys = ON")
+    return g.db
+
+
+@app.teardown_appcontext
+def close_db(exception=None):
+    db = g.pop("db", None)
+    if db is not None:
+        db.close()
+
+
+def init_db():
+    """Create the items table if it doesn't exist yet, and add new columns
+    to older databases that were created before poster_url existed."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            genre TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'plan to watch',
+            rating INTEGER NOT NULL DEFAULT 0,
+            poster_url TEXT NOT NULL DEFAULT '',
+            review TEXT NOT NULL DEFAULT '',
+            favorite_rank INTEGER DEFAULT NULL,
+            favorite_note TEXT NOT NULL DEFAULT '',
+            tmdb_id INTEGER DEFAULT NULL,
+            media_type TEXT DEFAULT NULL,
+            watched_at TEXT DEFAULT NULL,
+            is_rewatch INTEGER NOT NULL DEFAULT 0,
+            liked INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+    )
+    # Migration for databases created before poster_url/review/favorite_rank existed.
+    existing_columns = {row[1] for row in conn.execute("PRAGMA table_info(items)")}
+    if "poster_url" not in existing_columns:
+        conn.execute("ALTER TABLE items ADD COLUMN poster_url TEXT NOT NULL DEFAULT ''")
+    if "review" not in existing_columns:
+        conn.execute("ALTER TABLE items ADD COLUMN review TEXT NOT NULL DEFAULT ''")
+    if "favorite_rank" not in existing_columns:
+        conn.execute("ALTER TABLE items ADD COLUMN favorite_rank INTEGER DEFAULT NULL")
+    if "favorite_note" not in existing_columns:
+        conn.execute("ALTER TABLE items ADD COLUMN favorite_note TEXT NOT NULL DEFAULT ''")
+    if "tmdb_id" not in existing_columns:
+        conn.execute("ALTER TABLE items ADD COLUMN tmdb_id INTEGER DEFAULT NULL")
+    if "media_type" not in existing_columns:
+        conn.execute("ALTER TABLE items ADD COLUMN media_type TEXT DEFAULT NULL")
+    if "watched_at" not in existing_columns:
+        conn.execute("ALTER TABLE items ADD COLUMN watched_at TEXT DEFAULT NULL")
+    if "is_rewatch" not in existing_columns:
+        conn.execute("ALTER TABLE items ADD COLUMN is_rewatch INTEGER NOT NULL DEFAULT 0")
+    if "liked" not in existing_columns:
+        conn.execute("ALTER TABLE items ADD COLUMN liked INTEGER NOT NULL DEFAULT 0")
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS episode_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_id INTEGER NOT NULL,
+            season_number INTEGER NOT NULL,
+            episode_number INTEGER NOT NULL,
+            rating INTEGER NOT NULL DEFAULT 0,
+            review TEXT NOT NULL DEFAULT '',
+            liked INTEGER NOT NULL DEFAULT 0,
+            watched_at TEXT DEFAULT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(item_id, season_number, episode_number),
+            FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS profile (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            name TEXT NOT NULL DEFAULT 'Movie Lover',
+            bio TEXT NOT NULL DEFAULT '',
+            avatar TEXT NOT NULL DEFAULT '🎬',
+            pinned_favorites TEXT NOT NULL DEFAULT '[]'
+        )
+        """
+    )
+    profile_columns = {row[1] for row in conn.execute("PRAGMA table_info(profile)")}
+    if "pinned_favorites" not in profile_columns:
+        conn.execute("ALTER TABLE profile ADD COLUMN pinned_favorites TEXT NOT NULL DEFAULT '[]'")
+    conn.execute(
+        "INSERT OR IGNORE INTO profile (id, name, bio, avatar, pinned_favorites) VALUES (1, 'Movie Lover', '', '🎬', '[]')"
+    )
+    conn.commit()
+
+def row_to_dict(row):
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "genre": row["genre"],
+        "status": row["status"],
+        "rating": row["rating"],
+        "poster_url": row["poster_url"] if "poster_url" in row.keys() else "",
+        "review": row["review"] if "review" in row.keys() else "",
+        "favorite_rank": row["favorite_rank"] if "favorite_rank" in row.keys() else None,
+        "favorite_note": row["favorite_note"] if "favorite_note" in row.keys() else "",
+        "tmdb_id": row["tmdb_id"] if "tmdb_id" in row.keys() else None,
+        "media_type": row["media_type"] if "media_type" in row.keys() else None,
+        "watched_at": row["watched_at"] if "watched_at" in row.keys() else None,
+        "is_rewatch": bool(row["is_rewatch"]) if "is_rewatch" in row.keys() else False,
+        "liked": bool(row["liked"]) if "liked" in row.keys() else False,
+        "created_at": row["created_at"],
+    }
+
+
+def normalize_pinned_favorites(value):
+    if value in (None, ""):
+        return []
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+    else:
+        parsed = value
+
+    if not isinstance(parsed, list):
+        return []
+
+    cleaned = []
+    for item in parsed:
+        try:
+            cleaned_value = int(item)
+        except (TypeError, ValueError):
+            continue
+        if cleaned_value not in cleaned:
+            cleaned.append(cleaned_value)
+    return cleaned
+
+def validate_payload(data, partial=False):
+    cleaned = {}
+
+    if "title" in data or not partial:
+        title = (data.get("title") or "").strip()
+        if not title:
+            return None, "Title is required."
+        cleaned["title"] = title
+
+    if "genre" in data or not partial:
+        cleaned["genre"] = (data.get("genre") or "").strip()
+
+    if "status" in data or not partial:
+        status = (data.get("status") or "plan to watch").strip().lower()
+        if status not in VALID_STATUSES:
+            return None, f"Status must be one of: {', '.join(sorted(VALID_STATUSES))}."
+        cleaned["status"] = status
+
+        if status == "completed" and "watched_at" not in data:
+            cleaned["watched_at"] = datetime.now().strftime("%Y-%m-%d")
+
+    if "rating" in data or not partial:
+        try:
+            rating = int(data.get("rating", 0))
+        except (TypeError, ValueError):
+            return None, "Rating must be a whole number between 0 and 5."
+        if rating < 0 or rating > 5:
+            return None, "Rating must be between 0 and 5."
+        cleaned["rating"] = rating
+
+    if "poster_url" in data:
+        cleaned["poster_url"] = (data.get("poster_url") or "").strip()
+    elif not partial:
+        cleaned["poster_url"] = ""
+
+    if "review" in data:
+        cleaned["review"] = (data.get("review") or "").strip()
+    elif not partial:
+        cleaned["review"] = ""
+
+    if "favorite_rank" in data:
+        raw = data.get("favorite_rank")
+        if raw in (None, "", 0):
+            cleaned["favorite_rank"] = None
+        else:
+            try:
+                rank = int(raw)
+            except (TypeError, ValueError):
+                return None, "favorite_rank must be a whole number between 1 and 5."
+            if rank < 1 or rank > 5:
+                return None, "favorite_rank must be between 1 and 5."
+            cleaned["favorite_rank"] = rank
+
+    if "favorite_note" in data:
+        cleaned["favorite_note"] = (data.get("favorite_note") or "").strip()[:120]
+
+    if "tmdb_id" in data:
+        raw_id = data.get("tmdb_id")
+        cleaned["tmdb_id"] = int(raw_id) if raw_id not in (None, "") else None
+
+    if "media_type" in data:
+        mt = (data.get("media_type") or "").strip().lower()
+        cleaned["media_type"] = mt if mt in ("movie", "tv") else None
+
+    if "watched_at" in data:
+        raw_date = (data.get("watched_at") or "").strip()
+        if not raw_date:
+            cleaned["watched_at"] = None
+        else:
+            try:
+                datetime.strptime(raw_date, "%Y-%m-%d")
+            except ValueError:
+                return None, "watched_at must be a date in YYYY-MM-DD format."
+            cleaned["watched_at"] = raw_date
+
+    if "is_rewatch" in data:
+        cleaned["is_rewatch"] = 1 if data.get("is_rewatch") else 0
+
+    if "liked" in data:
+        cleaned["liked"] = 1 if data.get("liked") else 0
+
+    return cleaned, None
+
+
+@app.route("/api/health", methods=["GET"])
+def health():
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/items", methods=["GET"])
+def list_items():
+    db = get_db()
+    status_filter = request.args.get("status")
+    if status_filter and status_filter.lower() != "all":
+        rows = db.execute(
+            "SELECT * FROM items WHERE status = ? ORDER BY created_at DESC, id DESC",
+            (status_filter.lower(),),
+        ).fetchall()
+    else:
+        rows = db.execute(
+            "SELECT * FROM items ORDER BY created_at DESC, id DESC"
+        ).fetchall()
+    return jsonify([row_to_dict(r) for r in rows])
+
+
+@app.route("/api/items", methods=["POST"])
+def create_item():
+    data = request.get_json(silent=True) or {}
+    cleaned, error = validate_payload(data, partial=False)
+    if error:
+        return jsonify({"error": error}), 400
+
+    db = get_db()
+    cursor = db.execute(
+        "INSERT INTO items (title, genre, status, rating, poster_url, review, favorite_rank, favorite_note, tmdb_id, media_type, watched_at, is_rewatch, liked) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            cleaned["title"],
+            cleaned["genre"],
+            cleaned["status"],
+            cleaned["rating"],
+            cleaned["poster_url"],
+            cleaned["review"],
+            cleaned.get("favorite_rank"),
+            cleaned.get("favorite_note", ""),
+            cleaned.get("tmdb_id"),
+            cleaned.get("media_type"),
+            cleaned.get("watched_at"),
+            cleaned.get("is_rewatch", 0),
+            cleaned.get("liked", 0),
+        ),
+    )
+    db.commit()
+    new_row = db.execute("SELECT * FROM items WHERE id = ?", (cursor.lastrowid,)).fetchone()
+    return jsonify(row_to_dict(new_row)), 201
+
+
+@app.route("/api/items/<int:item_id>", methods=["PUT", "PATCH"])
+def update_item(item_id):
+    db = get_db()
+    existing = db.execute("SELECT * FROM items WHERE id = ?", (item_id,)).fetchone()
+    if existing is None:
+        return jsonify({"error": "Item not found."}), 404
+
+    data = request.get_json(silent=True) or {}
+    cleaned, error = validate_payload(data, partial=True)
+    if error:
+        return jsonify({"error": error}), 400
+
+    merged = row_to_dict(existing)
+    merged.update(cleaned)
+
+   # If this item is being assigned a rank (1-5), that rank can only belong
+    # to one item of the same media type at a time — a movie and a TV show
+    # can both hold rank #1 simultaneously, but two movies can't.
+    if "favorite_rank" in cleaned and cleaned["favorite_rank"] is not None:
+        is_tv = merged.get("media_type") == "tv"
+        if is_tv:
+            db.execute(
+                "UPDATE items SET favorite_rank = NULL WHERE favorite_rank = ? AND id != ? AND media_type = 'tv'",
+                (cleaned["favorite_rank"], item_id),
+            )
+        else:
+            db.execute(
+                "UPDATE items SET favorite_rank = NULL WHERE favorite_rank = ? AND id != ? AND (media_type IS NULL OR media_type != 'tv')",
+                (cleaned["favorite_rank"], item_id),
+            )
+
+    db.execute(
+        """UPDATE items SET
+            title = ?, genre = ?, status = ?, rating = ?, poster_url = ?,
+            review = ?, favorite_rank = ?, favorite_note = ?, tmdb_id = ?,
+            media_type = ?, watched_at = ?, is_rewatch = ?, liked = ?
+        WHERE id = ?""",
+        (
+            merged["title"],
+            merged["genre"],
+            merged["status"],
+            merged["rating"],
+            merged["poster_url"],
+            merged["review"],
+            merged["favorite_rank"],
+            merged["favorite_note"],
+            merged["tmdb_id"],
+            merged["media_type"],
+            merged["watched_at"],
+            1 if merged["is_rewatch"] else 0,
+            1 if merged["liked"] else 0,
+            item_id,
+        ),
+    )
+    db.commit()
+    updated_row = db.execute("SELECT * FROM items WHERE id = ?", (item_id,)).fetchone()
+    return jsonify(row_to_dict(updated_row))
+
+
+@app.route("/api/items/<int:item_id>", methods=["DELETE"])
+def delete_item(item_id):
+    db = get_db()
+    existing = db.execute("SELECT * FROM items WHERE id = ?", (item_id,)).fetchone()
+    if existing is None:
+        return jsonify({"error": "Item not found."}), 404
+
+    db.execute("DELETE FROM items WHERE id = ?", (item_id,))
+    db.commit()
+    return jsonify({"deleted": item_id})
+
+
+_genre_cache = {}
+_details_cache = {}
+
+def get_genre_map():
+    if _genre_cache:
+        return _genre_cache
+    if not TMDB_API_KEY:
+        return {}
+    try:
+        for kind in ("movie", "tv"):
+            resp = requests.get(
+                f"{TMDB_BASE}/genre/{kind}/list",
+                params={"api_key": TMDB_API_KEY},
+                timeout=5,
+            )
+            resp.raise_for_status()
+            for genre in resp.json().get("genres", []):
+                _genre_cache[genre["id"]] = genre["name"]
+    except requests.RequestException:
+        pass
+    return _genre_cache
+
+
+@app.route("/api/search-titles", methods=["GET"])
+def search_titles():
+    query = (request.args.get("q") or "").strip()
+    if not query:
+        return jsonify([])
+
+    if not TMDB_API_KEY:
+        return jsonify({"error": "TMDB_API_KEY is not set on the server."}), 500
+
+    try:
+        resp = requests.get(
+            f"{TMDB_BASE}/search/multi",
+            params={"api_key": TMDB_API_KEY, "query": query, "include_adult": "false"},
+            timeout=5,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.RequestException:
+        return jsonify({"error": "Could not reach the movie database."}), 502
+
+    genre_map = get_genre_map()
+    results = []
+    for item in data.get("results", [])[:8]:
+        media_type = item.get("media_type")
+        if media_type not in ("movie", "tv"):
+            continue
+
+        title = item.get("title") or item.get("name") or ""
+        if not title:
+            continue
+
+        date = item.get("release_date") or item.get("first_air_date") or ""
+        year = date[:4] if date else None
+
+        genre_ids = item.get("genre_ids", [])
+        genre_names = [genre_map[gid] for gid in genre_ids if gid in genre_map]
+        is_animation = "Animation" in genre_names
+        is_japanese = item.get("original_language") == "ja"
+
+        if media_type == "tv" and is_animation and is_japanese:
+            kind_label = "Anime"
+        elif media_type == "tv":
+            kind_label = "TV Series"
+        else:
+            kind_label = "Movie"
+
+        poster_path = item.get("poster_path")
+
+        results.append(
+            {
+                "tmdb_id": item.get("id"),
+                "media_type": media_type,
+                "title": title,
+                "year": year,
+                "kind": kind_label,
+                "genre": ", ".join(genre_names[:2]),
+                "poster_url": f"{TMDB_IMAGE_BASE}{poster_path}" if poster_path else "",
+            }
+        )
+
+    return jsonify(results)
+
+@app.route("/api/discover", methods=["GET"])
+def discover():
+    section = (request.args.get("section") or "trending").strip().lower()
+    if section not in ("recommendations", "trending", "upcoming"):
+        return jsonify({"error": "Unknown discovery section."}), 400
+
+    if not TMDB_API_KEY:
+        return jsonify({"error": "TMDB_API_KEY is not set on the server."}), 500
+
+    media_filter = (request.args.get("media_type") or "all").strip().lower()
+    if media_filter not in ("all", "movie", "tv"):
+        media_filter = "all"
+
+    try:
+        frontend_page = int(request.args.get("page", 1))
+        if frontend_page < 1:
+            frontend_page = 1
+    except (TypeError, ValueError):
+        frontend_page = 1
+
+    tmdb_page = math.ceil(frontend_page / 2)
+    is_second_half = (frontend_page % 2 == 0)
+
+    window = (request.args.get("window") or "week").strip().lower()
+    if window not in ("day", "week"):
+        window = "week"
+
+    genre_map = get_genre_map()
+
+    def fetch_kind(kind):
+        endpoint = {
+            "recommendations": f"/discover/{kind}",
+            "trending": f"/trending/{kind}/{window}",
+            "upcoming": "/movie/upcoming" if kind == "movie" else "/tv/on_the_air",
+        }[section]
+        params = {"api_key": TMDB_API_KEY, "language": "en-US", "page": tmdb_page}
+        try:
+            resp = requests.get(f"{TMDB_BASE}{endpoint}", params=params, timeout=5)
+            resp.raise_for_status()
+            return resp.json().get("results", [])
+        except requests.RequestException:
+            return []
+
+    if media_filter == "all":
+        movie_results = fetch_kind("movie")
+        tv_results = fetch_kind("tv")
+        # Interleave movie/tv instead of dumping all movies first, all tv second
+        tagged = []
+        for i in range(max(len(movie_results), len(tv_results))):
+            if i < len(movie_results):
+                tagged.append((movie_results[i], "movie"))
+            if i < len(tv_results):
+                tagged.append((tv_results[i], "tv"))
+        raw_results = tagged
+    else:
+        raw_results = [(r, media_filter) for r in fetch_kind(media_filter)]
+
+    start_idx = 10 if is_second_half else 0
+    sliced = raw_results[start_idx : start_idx + 10]
+
+    results = []
+    for item, kind in sliced:
+        release_date = item.get("release_date") or item.get("first_air_date") or ""
+        genre_ids = item.get("genre_ids", [])
+        genre_names = [genre_map[g] for g in genre_ids if g in genre_map]
+        results.append({
+            "tmdb_id": item.get("id"),
+            "media_type": kind,
+            "title": item.get("title") or item.get("name") or "Untitled",
+            "year": release_date[:4] if release_date else None,
+            "poster_url": f"{TMDB_IMAGE_BASE}{item['poster_path']}" if item.get("poster_path") else "",
+            "vote_average": item.get("vote_average", 0),
+            "genre": ", ".join(genre_names),
+        })
+
+    return jsonify(results)
+
+@app.route("/api/title-details/<int:tmdb_id>", methods=["GET"])
+def title_details(tmdb_id):
+    media_type = (request.args.get("media_type") or "movie").strip().lower()
+    if media_type not in ("movie", "tv"):
+        media_type = "movie"
+
+    cache_key = f"{media_type}:{tmdb_id}"
+    if cache_key in _details_cache:
+        return jsonify(_details_cache[cache_key])
+
+    if not TMDB_API_KEY:
+        return jsonify({"error": "TMDB_API_KEY is not set on the server."}), 500
+
+    try:
+        resp = requests.get(
+            f"{TMDB_BASE}/{media_type}/{tmdb_id}",
+            params={"api_key": TMDB_API_KEY, "append_to_response": "credits"},
+            timeout=5,
+        )
+        if resp.status_code == 404:
+            return jsonify({"error": "Title not found."}), 404
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.RequestException:
+        return jsonify({"error": "Could not reach the movie database."}), 502
+
+    title = data.get("title") or data.get("name") or ""
+    date = data.get("release_date") or data.get("first_air_date") or ""
+    year = date[:4] if date else None
+    genres = [g["name"] for g in data.get("genres", [])]
+    poster_path = data.get("poster_path")
+
+    credits = data.get("credits", {})
+
+    def person_photo(person):
+        path = person.get("profile_path")
+        return f"{TMDB_IMAGE_BASE}{path}" if path else None
+
+    cast = [
+        {"name": c["name"], "photo": person_photo(c)}
+        for c in credits.get("cast", [])[:6]
+    ]
+
+    if media_type == "movie":
+        directors = [
+            {"name": c["name"], "photo": person_photo(c)}
+            for c in credits.get("crew", [])
+            if c.get("job") == "Director"
+        ]
+    else:
+        directors = [
+            {"name": c.get("name"), "photo": person_photo(c)}
+            for c in data.get("created_by", [])
+        ]
+
+    result = {
+        "title": title,
+        "year": year,
+        "genres": genres,
+        "overview": data.get("overview") or "",
+        "poster_url": f"{TMDB_IMAGE_BASE}{poster_path}" if poster_path else "",
+        "directors": directors,
+        "cast": cast,
+        "runtime": data.get("runtime"),
+        "episode_count": data.get("number_of_episodes"),
+        "studios": [
+            company.get("name")
+            for company in data.get("production_companies", [])
+            if company.get("name")
+        ],
+        "vote_average": data.get("vote_average"),
+    }
+    _details_cache[cache_key] = result
+    return jsonify(result)
+
+def episode_log_to_dict(row):
+    return {
+        "id": row["id"],
+        "item_id": row["item_id"],
+        "season_number": row["season_number"],
+        "episode_number": row["episode_number"],
+        "rating": row["rating"],
+        "review": row["review"],
+        "liked": bool(row["liked"]),
+        "watched_at": row["watched_at"],
+        "created_at": row["created_at"],
+    }
+
+
+@app.route("/api/tv/<int:tmdb_id>/seasons", methods=["GET"])
+def tv_seasons(tmdb_id):
+    if not TMDB_API_KEY:
+        return jsonify({"error": "TMDB_API_KEY is not set on the server."}), 500
+    try:
+        resp = requests.get(
+            f"{TMDB_BASE}/tv/{tmdb_id}",
+            params={"api_key": TMDB_API_KEY},
+            timeout=5,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.RequestException:
+        return jsonify({"error": "Could not reach the movie database."}), 502
+
+    seasons = [
+        {
+            "season_number": s["season_number"],
+            "name": s.get("name") or f"Season {s['season_number']}",
+            "episode_count": s.get("episode_count", 0),
+            "poster_url": f"{TMDB_IMAGE_BASE}{s['poster_path']}" if s.get("poster_path") else "",
+        }
+        for s in data.get("seasons", [])
+        if s.get("season_number", 0) > 0  # skip "Specials"
+    ]
+    return jsonify({"seasons": seasons})
+
+
+@app.route("/api/tv/<int:tmdb_id>/season/<int:season_number>", methods=["GET"])
+def tv_season_episodes(tmdb_id, season_number):
+    if not TMDB_API_KEY:
+        return jsonify({"error": "TMDB_API_KEY is not set on the server."}), 500
+    try:
+        resp = requests.get(
+            f"{TMDB_BASE}/tv/{tmdb_id}/season/{season_number}",
+            params={"api_key": TMDB_API_KEY},
+            timeout=5,
+        )
+        if resp.status_code == 404:
+            return jsonify({"error": "Season not found."}), 404
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.RequestException:
+        return jsonify({"error": "Could not reach the movie database."}), 502
+
+    episodes = [
+        {
+            "episode_number": e["episode_number"],
+            "name": e.get("name") or f"Episode {e['episode_number']}",
+            "air_date": e.get("air_date"),
+            "overview": e.get("overview") or "",
+        }
+        for e in data.get("episodes", [])
+    ]
+    return jsonify({"season_number": season_number, "episodes": episodes})
+
+
+@app.route("/api/items/<int:item_id>/episodes", methods=["GET"])
+def list_episode_logs(item_id):
+    db = get_db()
+    rows = db.execute(
+        "SELECT * FROM episode_logs WHERE item_id = ? ORDER BY season_number, episode_number",
+        (item_id,),
+    ).fetchall()
+    return jsonify([episode_log_to_dict(r) for r in rows])
+
+
+@app.route("/api/items/<int:item_id>/episodes/<int:season_number>/<int:episode_number>", methods=["PUT"])
+def upsert_episode_log(item_id, season_number, episode_number):
+    data = request.get_json(silent=True) or {}
+
+    try:
+        rating = int(data.get("rating", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Rating must be a whole number between 0 and 5."}), 400
+    if rating < 0 or rating > 5:
+        return jsonify({"error": "Rating must be between 0 and 5."}), 400
+
+    review = (data.get("review") or "").strip()
+    liked = 1 if data.get("liked") else 0
+
+    raw_date = (data.get("watched_at") or "").strip()
+    if raw_date:
+        try:
+            datetime.strptime(raw_date, "%Y-%m-%d")
+        except ValueError:
+            return jsonify({"error": "watched_at must be a date in YYYY-MM-DD format."}), 400
+        watched_at = raw_date
+    else:
+        watched_at = datetime.now().strftime("%Y-%m-%d")
+
+    db = get_db()
+    existing = db.execute("SELECT id FROM items WHERE id = ?", (item_id,)).fetchone()
+    if existing is None:
+        return jsonify({"error": "Item not found."}), 404
+
+    db.execute(
+        """
+        INSERT INTO episode_logs (item_id, season_number, episode_number, rating, review, liked, watched_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(item_id, season_number, episode_number)
+        DO UPDATE SET rating = excluded.rating, review = excluded.review,
+                      liked = excluded.liked, watched_at = excluded.watched_at
+        """,
+        (item_id, season_number, episode_number, rating, review, liked, watched_at),
+    )
+    db.commit()
+    row = db.execute(
+        "SELECT * FROM episode_logs WHERE item_id = ? AND season_number = ? AND episode_number = ?",
+        (item_id, season_number, episode_number),
+    ).fetchone()
+    return jsonify(episode_log_to_dict(row))
+
+
+@app.route("/api/items/<int:item_id>/episodes/<int:season_number>/<int:episode_number>", methods=["DELETE"])
+def delete_episode_log(item_id, season_number, episode_number):
+    db = get_db()
+    db.execute(
+        "DELETE FROM episode_logs WHERE item_id = ? AND season_number = ? AND episode_number = ?",
+        (item_id, season_number, episode_number),
+    )
+    db.commit()
+    return jsonify({"deleted": True})
+
+@app.route("/api/episode-reviews", methods=["GET"])
+def list_episode_reviews():
+    db = get_db()
+    rows = db.execute(
+        """
+        SELECT e.*, i.title, i.poster_url, i.genre
+        FROM episode_logs e
+        JOIN items i ON i.id = e.item_id
+        WHERE e.review != '' OR e.rating > 0
+        ORDER BY COALESCE(e.watched_at, e.created_at) DESC
+        """
+    ).fetchall()
+    return jsonify(
+        [
+            {
+                **episode_log_to_dict(r),
+                "title": r["title"],
+                "poster_url": r["poster_url"],
+                "genre": r["genre"],
+            }
+            for r in rows
+        ]
+    )
+
+@app.route("/api/profile", methods=["GET"])
+def get_profile():
+    db = get_db()
+    row = db.execute("SELECT * FROM profile WHERE id = 1").fetchone()
+    return jsonify({
+        "name": row["name"],
+        "bio": row["bio"],
+        "avatar": row["avatar"],
+        "pinned_favorites": normalize_pinned_favorites(row["pinned_favorites"]),
+    })
+
+
+@app.route("/api/profile", methods=["PATCH"])
+def update_profile():
+    data = request.get_json(silent=True) or {}
+    db = get_db()
+    row = db.execute("SELECT * FROM profile WHERE id = 1").fetchone()
+
+    name = (data.get("name") if "name" in data else row["name"]) or "Movie Lover"
+    bio = (data.get("bio") if "bio" in data else row["bio"]) or ""
+    avatar = (data.get("avatar") if "avatar" in data else row["avatar"]) or "🎬"
+    pinned_favorites = normalize_pinned_favorites(
+        data.get("pinned_favorites") if "pinned_favorites" in data else row["pinned_favorites"]
+    )
+
+    payload = {
+        "name": name.strip()[:60],
+        "bio": bio.strip()[:200],
+        "avatar": avatar.strip()[:3_000_000],
+        "pinned_favorites": pinned_favorites,
+    }
+
+    db.execute(
+        "UPDATE profile SET name = ?, bio = ?, avatar = ?, pinned_favorites = ? WHERE id = 1",
+        (payload["name"], payload["bio"], payload["avatar"], json.dumps(payload["pinned_favorites"])),
+    )
+    db.commit()
+    return jsonify(payload)
+
+
+@app.route("/api/profile/talent", methods=["GET"])
+def profile_talent():
+    if not TMDB_API_KEY:
+        return jsonify({"directors": [], "actors": []})
+
+    db = get_db()
+    rows = db.execute(
+        "SELECT id, title, tmdb_id, media_type FROM items WHERE tmdb_id IS NOT NULL ORDER BY created_at DESC"
+    ).fetchall()
+
+    if not rows:
+        return jsonify({"directors": [], "actors": []})
+
+    director_map = {}
+    actor_map = {}
+
+    for r in rows:
+        media_type = r["media_type"] or "movie"
+        try:
+            resp = requests.get(
+                f"{TMDB_BASE}/{media_type}/{r['tmdb_id']}",
+                params={"api_key": TMDB_API_KEY, "append_to_response": "credits"},
+                timeout=5,
+            )
+            if resp.status_code != 200:
+                continue
+            data = resp.json()
+        except requests.RequestException:
+            continue
+
+        title = data.get("title") or data.get("name") or r["title"]
+        credits = data.get("credits", {})
+
+        for person in credits.get("crew", []) or []:
+            if person.get("job") != "Director" or not person.get("name"):
+                continue
+            name = person["name"]
+            entry = director_map.setdefault(name, {"name": name, "photo": None, "count": 0, "titles": []})
+            entry["count"] += 1
+            entry["titles"] = list(dict.fromkeys(entry["titles"] + [title]))
+            if not entry["photo"] and person.get("profile_path"):
+                entry["photo"] = f"{TMDB_IMAGE_BASE}{person['profile_path']}"
+
+        for person in credits.get("cast", []) or []:
+            if not person.get("name"):
+                continue
+            name = person["name"]
+            entry = actor_map.setdefault(name, {"name": name, "photo": None, "count": 0, "titles": []})
+            entry["count"] += 1
+            entry["titles"] = list(dict.fromkeys(entry["titles"] + [title]))
+            if not entry["photo"] and person.get("profile_path"):
+                entry["photo"] = f"{TMDB_IMAGE_BASE}{person['profile_path']}"
+
+    def to_response(mapping):
+        values = []
+        for value in mapping.values():
+            if value["count"] < 2:
+                continue
+            values.append({
+                "name": value["name"],
+                "photo": value["photo"],
+                "count": value["count"],
+                "titles": value["titles"],
+            })
+        values.sort(key=lambda item: (-item["count"], item["name"].lower()))
+        return values[:5]
+
+    return jsonify({"directors": to_response(director_map), "actors": to_response(actor_map)})
+
+
+
+if __name__ == "__main__":
+    init_db()
+    app.run(debug=True, host="0.0.0.0", port=5000)
+</file>
+
+<file path="frontend/src/components/CollectionsPage.jsx">
+import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+
+const STORAGE_KEY = "watchlist-collections-v1";
+const CHALLENGE_KEY = "watchlist-challenges-v1";
+const MAX_VISIBLE = 14; // posters shown on a playlist card before "See more"
+
+function read(key, fallback) {
+  try {
+    return JSON.parse(localStorage.getItem(key)) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/* ---------- shared popup shell ---------- */
+
+function Modal({ title, subtitle, onClose, children, footer }) {
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return createPortal(
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        className="modal collections-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          className="modal__close"
+          onClick={onClose}
+          aria-label="Close"
+        >
+          ✕
+        </button>
+        <h2 className="collections-modal__title">{title}</h2>
+        {subtitle && <p className="collections-modal__sub">{subtitle}</p>}
+        {children}
+        {footer && <div className="collections-modal__footer">{footer}</div>}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function PosterImg({ item }) {
+  return item.poster_url ? (
+    <img src={item.poster_url} alt="" loading="lazy" />
+  ) : (
+    <div className="view-grid__empty">🎬</div>
+  );
+}
+
+/* ---------- "See more": every title in the playlist ---------- */
+
+function ViewPlaylistModal({ collection, itemsById, onEdit, onAdd, onClose }) {
+  const list = collection.itemIds
+    .map((id) => itemsById.get(id))
+    .filter(Boolean);
+
+  return (
+    <Modal
+      title={collection.name}
+      subtitle={collection.description}
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className="btn btn--ghost" onClick={onEdit}>
+            ✎ Edit playlist
+          </button>
+          <button type="button" className="btn btn--primary" onClick={onAdd}>
+            + Add titles
+          </button>
+        </>
+      }
+    >
+      <p className="collections-modal__count">
+        {list.length} title{list.length !== 1 ? "s" : ""}
+      </p>
+      {list.length === 0 ? (
+        <p className="collection-picker__empty">
+          Nothing in this playlist yet.
+        </p>
+      ) : (
+        <div className="view-grid">
+          {list.map((item) => (
+            <div className="view-grid__item" key={item.id} title={item.title}>
+              <PosterImg item={item} />
+              <span>{item.title}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+/* ---------- "+ Add titles" ---------- */
+
+function AddTitlesModal({ collection, items, onToggle, onClose }) {
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const shown = items.filter((item) => item.title.toLowerCase().includes(q));
+
+  return (
+    <Modal
+      title="Add titles"
+      subtitle={`to ${collection.name} · ${collection.itemIds.length} selected`}
+      onClose={onClose}
+      footer={
+        <button type="button" className="btn btn--primary" onClick={onClose}>
+          Done
+        </button>
+      }
+    >
+      <div className="collection-picker collection-picker--modal">
+        <input
+          className="collection-picker__search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search your titles"
+          aria-label="Search titles to add"
+          autoFocus
+        />
+        <div className="collection-picker__list">
+          {shown.length === 0 ? (
+            <p className="collection-picker__empty">
+              No titles match “{query}”.
+            </p>
+          ) : (
+            shown.map((item) => {
+              const added = collection.itemIds.includes(item.id);
+              return (
+                <button
+                  type="button"
+                  key={item.id}
+                  className={`collection-picker__row ${
+                    added ? "collection-picker__row--on" : ""
+                  }`}
+                  onClick={() => onToggle(collection.id, item.id)}
+                  aria-pressed={added}
+                >
+                  {item.poster_url ? (
+                    <img
+                      src={item.poster_url}
+                      alt=""
+                      className="collection-picker__thumb"
+                    />
+                  ) : (
+                    <div className="collection-picker__thumb--empty">🎬</div>
+                  )}
+                  <span className="collection-picker__title">{item.title}</span>
+                  <span className="collection-picker__mark">
+                    {added ? "✓" : "+"}
+                  </span>
+                </button>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ---------- edit name + description ---------- */
+
+function EditPlaylistModal({ collection, onSave, onClose }) {
+  const [name, setName] = useState(collection.name);
+  const [description, setDescription] = useState(collection.description || "");
+
+  function submit(event) {
+    event.preventDefault();
+    const title = name.trim();
+    if (!title) return;
+    onSave(collection.id, title, description.trim());
+  }
+
+  return (
+    <Modal title="Edit playlist" onClose={onClose}>
+      <form className="collection-edit" onSubmit={submit}>
+        <label className="collection-edit__label">
+          Name
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Playlist name"
+            autoFocus
+          />
+        </label>
+        <label className="collection-edit__label">
+          Description
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="What ties this list together?"
+            rows={3}
+          />
+        </label>
+        <div className="collection-edit__actions">
+          <button type="button" className="btn btn--ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="btn btn--primary"
+            disabled={!name.trim()}
+          >
+            Save changes
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/* ---------- page ---------- */
+
+export default function CollectionsPage({ items }) {
+  const [collections, setCollections] = useState(() => read(STORAGE_KEY, []));
+  const [challenges, setChallenges] = useState(() => read(CHALLENGE_KEY, []));
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [challengeName, setChallengeName] = useState("");
+  const [challengeGoal, setChallengeGoal] = useState(10);
+  const [modal, setModal] = useState(null); // { type: "view" | "add" | "edit", id }
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [confirmChallengeId, setConfirmChallengeId] = useState(null);
+
+  const completed = useMemo(
+    () => items.filter((item) => item.status === "completed"),
+    [items],
+  );
+  const itemsById = useMemo(
+    () => new Map(items.map((item) => [item.id, item])),
+    [items],
+  );
+
+  useEffect(
+    () => localStorage.setItem(STORAGE_KEY, JSON.stringify(collections)),
+    [collections],
+  );
+  useEffect(
+    () => localStorage.setItem(CHALLENGE_KEY, JSON.stringify(challenges)),
+    [challenges],
+  );
+
+  const openModal = (type, id) => {
+    setConfirmDeleteId(null);
+    setModal({ type, id });
+  };
+  const closeModal = () => setModal(null);
+  const modalCollection = modal
+    ? collections.find((c) => c.id === modal.id)
+    : null;
+
+  function createCollection(event) {
+    event.preventDefault();
+    const title = name.trim();
+    const summary = description.trim();
+    if (!title || !summary) return;
+    setCollections((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        name: title,
+        description: summary,
+        itemIds: [],
+      },
+    ]);
+    setName("");
+    setDescription("");
+  }
+  function deleteCollection(collectionId) {
+    setCollections((current) =>
+      current.filter((collection) => collection.id !== collectionId),
+    );
+  }
+  function saveCollection(collectionId, title, summary) {
+    setCollections((current) =>
+      current.map((collection) =>
+        collection.id !== collectionId
+          ? collection
+          : { ...collection, name: title, description: summary },
+      ),
+    );
+    closeModal();
+  }
+  function toggleItem(collectionId, itemId) {
+    setCollections((current) =>
+      current.map((collection) =>
+        collection.id !== collectionId
+          ? collection
+          : {
+              ...collection,
+              itemIds: collection.itemIds.includes(itemId)
+                ? collection.itemIds.filter((id) => id !== itemId)
+                : [...collection.itemIds, itemId],
+            },
+      ),
+    );
+  }
+  function createChallenge(event) {
+    event.preventDefault();
+    const title = challengeName.trim();
+    if (!title || Number(challengeGoal) < 1) return;
+    setChallenges((current) => [
+      ...current,
+      { id: crypto.randomUUID(), name: title, goal: Number(challengeGoal) },
+    ]);
+    setChallengeName("");
+    setChallengeGoal(10);
+  }
+  function deleteChallenge(challengeId) {
+    setChallenges((current) =>
+      current.filter((challenge) => challenge.id !== challengeId),
+    );
+  }
+
+  return (
+    <div className="feature-page">
+      <header className="feature-page__intro">
+        <span className="feature-page__eyebrow">
+          <span className="feature-page__eyebrow-dot" />
+          Collections
+        </span>
+        <h1 className="feature-page__headline">
+          Build your <span>own shelves</span>
+        </h1>
+        <p className="feature-page__lede">
+          Group titles by mood, theme, director, or the challenge you are
+          chasing.
+        </p>
+      </header>
+      <div className="feature-columns">
+        <section className="feature-section">
+          <div className="feature-section__heading">
+            <h2>Themed playlists</h2>
+            <span>{collections.length}</span>
+          </div>
+          <form
+            className="inline-create inline-create--stacked"
+            onSubmit={createCollection}
+          >
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Mind-bending thrillers"
+              aria-label="Collection name"
+            />
+            <textarea
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              placeholder="What ties this list together? e.g. Twisty plots that mess with your head."
+              aria-label="Collection description"
+              rows={2}
+            />
+            <button
+              type="submit"
+              disabled={!name.trim() || !description.trim()}
+            >
+              Create list
+            </button>
+          </form>
+          {collections.length === 0 ? (
+            <p className="empty-state">Create your first collection.</p>
+          ) : (
+            collections.map((collection) => {
+              const isConfirming = confirmDeleteId === collection.id;
+              const validIds = collection.itemIds.filter((id) =>
+                itemsById.has(id),
+              );
+              const visibleIds = validIds.slice(0, MAX_VISIBLE);
+              const hiddenCount = validIds.length - MAX_VISIBLE;
+              return (
+                <article className="collection-card" key={collection.id}>
+                  <div>
+                    <h3>{collection.name}</h3>
+                    <div className="collection-card__meta-actions">
+                      <span>{collection.itemIds.length} titles</span>
+                      {isConfirming ? (
+                        <span className="confirm-delete">
+                          Delete playlist?
+                          <button
+                            type="button"
+                            className="btn btn--tiny btn--danger"
+                            onClick={() => {
+                              deleteCollection(collection.id);
+                              setConfirmDeleteId(null);
+                            }}
+                          >
+                            Yes
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn--tiny btn--ghost"
+                            onClick={() => setConfirmDeleteId(null)}
+                          >
+                            No
+                          </button>
+                        </span>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className="icon-btn"
+                            aria-label={`Edit ${collection.name}`}
+                            title="Edit playlist"
+                            onClick={() => openModal("edit", collection.id)}
+                          >
+                            ✎
+                          </button>
+                          <button
+                            type="button"
+                            className="icon-btn"
+                            aria-label={`Delete ${collection.name}`}
+                            title="Delete playlist"
+                            onClick={() => setConfirmDeleteId(collection.id)}
+                          >
+                            ✕
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  {collection.description && (
+                    <p className="collection-card__desc">
+                      {collection.description}
+                    </p>
+                  )}
+
+                  {validIds.length > 0 && (
+                    <>
+                      <div className="poster-chip-row">
+                        {visibleIds.map((itemId) => {
+                          const item = itemsById.get(itemId);
+                          return (
+                            <div className="poster-chip" key={itemId}>
+                              {item.poster_url ? (
+                                <img src={item.poster_url} alt="" />
+                              ) : (
+                                <div className="poster-chip__empty">🎬</div>
+                              )}
+                              <button
+                                type="button"
+                                className="poster-chip__remove"
+                                aria-label={`Remove ${item.title} from ${collection.name}`}
+                                title={`Remove ${item.title}`}
+                                onClick={() =>
+                                  toggleItem(collection.id, itemId)
+                                }
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {hiddenCount > 0 && (
+                        <button
+                          type="button"
+                          className="poster-chip-more"
+                          onClick={() => openModal("view", collection.id)}
+                        >
+                          See {hiddenCount} more ▾
+                        </button>
+                      )}
+                    </>
+                  )}
+
+                  <button
+                    type="button"
+                    className="collection-card__add-btn"
+                    onClick={() => openModal("add", collection.id)}
+                  >
+                    + Add titles
+                  </button>
+                </article>
+              );
+            })
+          )}
+        </section>
+        <section className="feature-section">
+          <div className="feature-section__heading">
+            <h2>Watch challenges</h2>
+            <span>{completed.length} completed</span>
+          </div>
+          <form className="inline-create" onSubmit={createChallenge}>
+            <input
+              value={challengeName}
+              onChange={(event) => setChallengeName(event.target.value)}
+              placeholder="50 films in 2026"
+              aria-label="Challenge name"
+            />
+            <input
+              type="number"
+              min="1"
+              value={challengeGoal}
+              onChange={(event) => setChallengeGoal(event.target.value)}
+              aria-label="Challenge goal"
+            />
+            <button type="submit">Add goal</button>
+          </form>
+          {challenges.length === 0 ? (
+            <p className="empty-state">Set a goal and make it yours.</p>
+          ) : (
+            challenges.map((challenge) => {
+              const progress = Math.min(completed.length, challenge.goal);
+              return (
+                <article className="challenge-card" key={challenge.id}>
+                  <div>
+                    <h3>{challenge.name}</h3>
+                    <div className="challenge-card__meta-actions">
+                      <strong>
+                        {progress} / {challenge.goal}
+                      </strong>
+                      {confirmChallengeId === challenge.id ? (
+                        <span className="confirm-delete">
+                          Delete?
+                          <button
+                            type="button"
+                            className="btn btn--tiny btn--danger"
+                            onClick={() => {
+                              deleteChallenge(challenge.id);
+                              setConfirmChallengeId(null);
+                            }}
+                          >
+                            Yes
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn--tiny btn--ghost"
+                            onClick={() => setConfirmChallengeId(null)}
+                          >
+                            No
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          aria-label={`Delete ${challenge.name}`}
+                          title="Delete challenge"
+                          onClick={() => setConfirmChallengeId(challenge.id)}
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="challenge-card__track">
+                    <span
+                      style={{ width: `${(progress / challenge.goal) * 100}%` }}
+                    />
+                  </div>
+                </article>
+              );
+            })
+          )}
+        </section>
+      </div>
+
+      {modalCollection && modal.type === "view" && (
+        <ViewPlaylistModal
+          collection={modalCollection}
+          itemsById={itemsById}
+          onEdit={() => openModal("edit", modalCollection.id)}
+          onAdd={() => openModal("add", modalCollection.id)}
+          onClose={closeModal}
+        />
+      )}
+      {modalCollection && modal.type === "add" && (
+        <AddTitlesModal
+          collection={modalCollection}
+          items={items}
+          onToggle={toggleItem}
+          onClose={closeModal}
+        />
+      )}
+      {modalCollection && modal.type === "edit" && (
+        <EditPlaylistModal
+          collection={modalCollection}
+          onSave={saveCollection}
+          onClose={closeModal}
+        />
+      )}
+    </div>
+  );
+}
+</file>
+
+<file path="frontend/src/App.jsx">
+import { useEffect, useMemo, useState } from "react";
+import { api } from "./api.js";
+import FilterTabs from "./components/FilterTabs.jsx";
+import AddItemForm from "./components/AddItemForm.jsx";
+import WatchlistItem from "./components/WatchlistItem.jsx";
+import TopFive from "./components/Topfive.jsx";
+import TitleDetailModal from "./components/TitleDetailModal.jsx";
+import PosterGrid from "./components/PosterGrid.jsx";
+import ReviewsPage from "./components/ReviewsPage.jsx";
+import StatsPage from "./components/StatsPage.jsx";
+import ProfilePage from "./components/ProfilePage.jsx";
+import DiscoverPage from "./components/DiscoverPage.jsx";
+import CollectionsPage from "./components/CollectionsPage.jsx";
+import DiaryPage from "./components/DiaryPage.jsx";
+import GenreDropdown from "./components/GenreDropdown.jsx";
+
+export default function App() {
+  const [items, setItems] = useState([]);
+  const [filter, setFilter] = useState("all");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [detailItem, setDetailItem] = useState(null);
+  const [page, setPage] = useState("watchlist");
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [listQuery, setListQuery] = useState("");
+  const [listGenre, setListGenre] = useState("all");
+
+  // Wraps a state update in the browser's View Transitions API when
+  // available, so switching tabs/filters crossfades smoothly instead of
+  // the page snapping instantly to its new height/content.
+  function smoothly(update) {
+    if (document.startViewTransition) {
+      document.startViewTransition(update);
+    } else {
+      update();
+    }
+  }
+
+  function changeFilter(next) {
+    smoothly(() => setFilter(next));
+  }
+
+  function changePage(next) {
+    smoothly(() => setPage(next));
+    setShowMenu(false);
+  }
+
+  function scrollToSection(id) {
+    document.getElementById(id)?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+    setShowMenu(false);
+  }
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    api
+      .list()
+      .then((data) => {
+        if (!cancelled) setItems(data);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    function updateScrollState() {
+      setShowBackToTop(window.scrollY > 520);
+    }
+
+    updateScrollState();
+    window.addEventListener("scroll", updateScrollState, { passive: true });
+    return () => window.removeEventListener("scroll", updateScrollState);
+  }, []);
+
+  const counts = useMemo(() => {
+    const c = {
+      all: items.length,
+      watching: 0,
+      "plan to watch": 0,
+      completed: 0,
+    };
+    for (const item of items) c[item.status] = (c[item.status] || 0) + 1;
+    return c;
+  }, [items]);
+
+  const visibleItems = useMemo(() => {
+    if (filter === "all") return items;
+    return items.filter((item) => item.status === filter);
+  }, [items, filter]);
+
+  const listGenres = useMemo(() => {
+    const genres = new Set();
+    items.forEach((item) =>
+      (item.genre || "")
+        .split(",")
+        .map((genre) => genre.trim())
+        .filter(Boolean)
+        .forEach((genre) => genres.add(genre)),
+    );
+    return [...genres].sort((a, b) => a.localeCompare(b));
+  }, [items]);
+
+  const searchedItems = useMemo(() => {
+    const query = listQuery.trim().toLowerCase();
+    return visibleItems.filter((item) => {
+      const matchesQuery =
+        !query ||
+        item.title.toLowerCase().includes(query) ||
+        (item.genre || "").toLowerCase().includes(query);
+      const matchesGenre =
+        listGenre === "all" ||
+        (item.genre || "")
+          .split(",")
+          .map((genre) => genre.trim().toLowerCase())
+          .includes(listGenre.toLowerCase());
+      return matchesQuery && matchesGenre;
+    });
+  }, [listGenre, listQuery, visibleItems]);
+
+  async function handleAdd(form) {
+    const normalizedTitle = form.title.trim().toLowerCase();
+    const isDuplicate = items.some((it) => {
+      if (
+        form.tmdb_id &&
+        it.tmdb_id &&
+        it.tmdb_id === form.tmdb_id &&
+        it.media_type === form.media_type
+      ) {
+        return true;
+      }
+      return it.title.trim().toLowerCase() === normalizedTitle;
+    });
+    if (isDuplicate) {
+      throw new Error(`"${form.title.trim()}" is already on your list.`);
+    }
+    const created = await api.create(form);
+    setItems((prev) => [created, ...prev]);
+  }
+  async function handleUpdate(id, changes) {
+    const previous = items;
+    setItems((prev) =>
+      prev.map((it) => (it.id === id ? { ...it, ...changes } : it)),
+    );
+    try {
+      await api.update(id, changes);
+      if ("favorite_rank" in changes) {
+        const fresh = await api.list();
+        setItems(fresh);
+      }
+    } catch (err) {
+      setItems(previous);
+      setError(err.message);
+    }
+  }
+
+  async function handleDelete(id) {
+    const previous = items;
+    setItems((prev) => prev.filter((it) => it.id !== id));
+    try {
+      await api.remove(id);
+    } catch (err) {
+      setItems(previous);
+      setError(err.message);
+    }
+  }
+
+  return (
+    <div className="page">
+      <header className="masthead">
+        <div className="masthead__title-group">
+          <h1>Watchlist</h1>
+          <p>Everything you're watching, want to watch, or already loved.</p>
+        </div>
+      </header>
+
+      <nav className="page-nav" aria-label="Main navigation">
+        <div className="page-nav__links">
+          {[
+            { key: "watchlist", label: "Watchlist" },
+            { key: "discover", label: "Discover" },
+            { key: "collections", label: "Collections" },
+            { key: "diary", label: "Diary" },
+            { key: "reviews", label: "Reviews" },
+            { key: "stats", label: "Stats" },
+            { key: "profile", label: "Profile" },
+          ].map((p) => (
+            <button
+              key={p.key}
+              className={`page-nav__btn ${page === p.key ? "page-nav__btn--active" : ""}`}
+              onClick={() => changePage(p.key)}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="page-nav__menu-wrap">
+          <button
+            className="page-nav__menu-btn"
+            onClick={() => setShowMenu((open) => !open)}
+            aria-label="Open more navigation"
+            aria-expanded={showMenu}
+            aria-haspopup="menu"
+          >
+            <span aria-hidden="true">☰</span>
+          </button>
+          {showMenu && (
+            <div className="page-nav__menu" role="menu">
+              <button
+                role="menuitem"
+                onClick={() => scrollToSection("top-five")}
+              >
+                Top 5 favorites
+              </button>
+              <button
+                role="menuitem"
+                onClick={() => scrollToSection("add-movie")}
+              >
+                Add a movie
+              </button>
+              <button
+                role="menuitem"
+                onClick={() => {
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                  setShowMenu(false);
+                }}
+              >
+                Back to top
+              </button>
+            </div>
+          )}
+        </div>
+      </nav>
+
+      <main className="content">
+        {error && (
+          <p className="banner banner--error">
+            {error} — make sure the backend is running on port 5000.
+          </p>
+        )}
+
+        {page === "watchlist" && (
+          <>
+            <div id="top-five">
+              <TopFive
+                items={items}
+                mediaType="movie"
+                title="5 Favorite Films"
+                onOpenDetails={setDetailItem}
+              />
+            </div>
+
+            <div id="top-five-tv">
+              <TopFive
+                items={items}
+                mediaType="tv"
+                title="5 Favorite TV Shows"
+                onOpenDetails={setDetailItem}
+              />
+            </div>
+
+            <div id="add-movie">
+              <AddItemForm onAdd={handleAdd} />
+            </div>
+
+            <FilterTabs
+              active={filter}
+              onChange={changeFilter}
+              counts={counts}
+            />
+
+            <div className="list-toolbar">
+              <label className="list-toolbar__search">
+                <span className="sr-only">Search your watchlist</span>
+                <span aria-hidden="true">⌕</span>
+                <input
+                  type="search"
+                  placeholder="Search titles or genres"
+                  value={listQuery}
+                  onChange={(e) => setListQuery(e.target.value)}
+                />
+              </label>
+              <GenreDropdown
+                value={listGenre}
+                onChange={setListGenre}
+                genres={listGenres}
+              />
+            </div>
+
+            {loading ? (
+              <p className="empty-state">Loading your shelf…</p>
+            ) : searchedItems.length === 0 ? (
+              <div className="empty-state">
+                <p>
+                  {visibleItems.length === 0
+                    ? filter === "all"
+                      ? "Nothing on the shelf yet. Add the first title."
+                      : `Nothing in "${filter}" yet.`
+                    : "No titles match those filters."}
+                </p>
+              </div>
+            ) : filter === "all" ? (
+              <ul className="ticket-list">
+                {searchedItems.map((item) => (
+                  <WatchlistItem
+                    key={item.id}
+                    item={item}
+                    onUpdate={handleUpdate}
+                    onDelete={handleDelete}
+                    onOpenDetails={setDetailItem}
+                  />
+                ))}
+              </ul>
+            ) : (
+              <PosterGrid items={searchedItems} onOpenDetails={setDetailItem} />
+            )}
+          </>
+        )}
+
+        {page === "reviews" && (
+          <ReviewsPage
+            items={items}
+            onOpenDetails={setDetailItem}
+            onUpdate={handleUpdate}
+            onDelete={handleDelete}
+          />
+        )}
+
+        {page === "discover" && (
+          <DiscoverPage items={items} onAdd={handleAdd} />
+        )}
+
+        {page === "collections" && <CollectionsPage items={items} />}
+
+        {page === "diary" && (
+          <DiaryPage items={items} onOpenDetails={setDetailItem} />
+        )}
+
+        {page === "stats" && (
+          <StatsPage items={items} onOpenDetails={setDetailItem} />
+        )}
+
+        {page === "profile" && (
+          <ProfilePage items={items} onOpenDetails={setDetailItem} />
+        )}
+      </main>
+
+      {detailItem && (
+        <TitleDetailModal
+          item={detailItem}
+          onClose={() => setDetailItem(null)}
+          onBackfill={(id, tmdb_id, media_type) =>
+            handleUpdate(id, { tmdb_id, media_type })
+          }
+        />
+      )}
+
+      {showBackToTop && (
+        <button
+          className="back-to-top"
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          aria-label="Back to top"
+          title="Back to top"
+        >
+          <span aria-hidden="true">↑</span>
+          <span>Top</span>
+        </button>
+      )}
+    </div>
+  );
+}
+</file>
+
 <file path="frontend/src/index.css">
 :root {
   --bg: #150c2e;
@@ -6190,7 +7732,7 @@ select {
 }
 
 .top-five__header h2 {
-  font-family: "Monoton", system-ui;
+  font-family: "Fraunces", system-ui;
   font-weight: 400;
   letter-spacing: 0.02em;
   font-size: 1.6rem;
@@ -10576,1289 +12118,165 @@ select {
   padding: 0.4rem 0.25rem;
   margin: 0;
 }
-</file>
 
-<file path="backend/app.py">
-"""
-Watchlist Tracker — backend API
-
-A small Flask app backed by SQLite. Stores movies/anime with a title,
-genre, status, rating, and an optional poster image. Data is persisted
-to watchlist.db in this same folder, so it survives restarts.
-
-Title search/autocomplete (with posters) is powered by TMDB
-(themoviedb.org). Put your API key in a `.env` file in this folder:
-    TMDB_API_KEY=your_key_here
-"""
-
-from flask import Flask, jsonify, request, g
-from flask_cors import CORS
-from dotenv import load_dotenv
-import sqlite3
-import os
-import math  
-import json
-import requests
-from datetime import datetime
-from collections import Counter
-
-load_dotenv()
-
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "watchlist.db")
-VALID_STATUSES = {"watching", "plan to watch", "completed"}
-
-TMDB_API_KEY = os.environ.get("TMDB_API_KEY", "")
-TMDB_BASE = "https://api.themoviedb.org/3"
-TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w200"
-
-app = Flask(__name__)
-CORS(app)
-
-
-def get_db():
-    if "db" not in g:
-        g.db = sqlite3.connect(DB_PATH)
-        g.db.row_factory = sqlite3.Row
-        g.db.execute("PRAGMA foreign_keys = ON")
-    return g.db
-
-
-@app.teardown_appcontext
-def close_db(exception=None):
-    db = g.pop("db", None)
-    if db is not None:
-        db.close()
-
-
-def init_db():
-    """Create the items table if it doesn't exist yet, and add new columns
-    to older databases that were created before poster_url existed."""
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS items (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            genre TEXT NOT NULL DEFAULT '',
-            status TEXT NOT NULL DEFAULT 'plan to watch',
-            rating INTEGER NOT NULL DEFAULT 0,
-            poster_url TEXT NOT NULL DEFAULT '',
-            review TEXT NOT NULL DEFAULT '',
-            favorite_rank INTEGER DEFAULT NULL,
-            favorite_note TEXT NOT NULL DEFAULT '',
-            tmdb_id INTEGER DEFAULT NULL,
-            media_type TEXT DEFAULT NULL,
-            watched_at TEXT DEFAULT NULL,
-            is_rewatch INTEGER NOT NULL DEFAULT 0,
-            liked INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )
-        """
-    )
-    # Migration for databases created before poster_url/review/favorite_rank existed.
-    existing_columns = {row[1] for row in conn.execute("PRAGMA table_info(items)")}
-    if "poster_url" not in existing_columns:
-        conn.execute("ALTER TABLE items ADD COLUMN poster_url TEXT NOT NULL DEFAULT ''")
-    if "review" not in existing_columns:
-        conn.execute("ALTER TABLE items ADD COLUMN review TEXT NOT NULL DEFAULT ''")
-    if "favorite_rank" not in existing_columns:
-        conn.execute("ALTER TABLE items ADD COLUMN favorite_rank INTEGER DEFAULT NULL")
-    if "favorite_note" not in existing_columns:
-        conn.execute("ALTER TABLE items ADD COLUMN favorite_note TEXT NOT NULL DEFAULT ''")
-    if "tmdb_id" not in existing_columns:
-        conn.execute("ALTER TABLE items ADD COLUMN tmdb_id INTEGER DEFAULT NULL")
-    if "media_type" not in existing_columns:
-        conn.execute("ALTER TABLE items ADD COLUMN media_type TEXT DEFAULT NULL")
-    if "watched_at" not in existing_columns:
-        conn.execute("ALTER TABLE items ADD COLUMN watched_at TEXT DEFAULT NULL")
-    if "is_rewatch" not in existing_columns:
-        conn.execute("ALTER TABLE items ADD COLUMN is_rewatch INTEGER NOT NULL DEFAULT 0")
-    if "liked" not in existing_columns:
-        conn.execute("ALTER TABLE items ADD COLUMN liked INTEGER NOT NULL DEFAULT 0")
-
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS episode_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            item_id INTEGER NOT NULL,
-            season_number INTEGER NOT NULL,
-            episode_number INTEGER NOT NULL,
-            rating INTEGER NOT NULL DEFAULT 0,
-            review TEXT NOT NULL DEFAULT '',
-            liked INTEGER NOT NULL DEFAULT 0,
-            watched_at TEXT DEFAULT NULL,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            UNIQUE(item_id, season_number, episode_number),
-            FOREIGN KEY (item_id) REFERENCES items(id) ON DELETE CASCADE
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS profile (
-            id INTEGER PRIMARY KEY CHECK (id = 1),
-            name TEXT NOT NULL DEFAULT 'Movie Lover',
-            bio TEXT NOT NULL DEFAULT '',
-            avatar TEXT NOT NULL DEFAULT '🎬',
-            pinned_favorites TEXT NOT NULL DEFAULT '[]'
-        )
-        """
-    )
-    profile_columns = {row[1] for row in conn.execute("PRAGMA table_info(profile)")}
-    if "pinned_favorites" not in profile_columns:
-        conn.execute("ALTER TABLE profile ADD COLUMN pinned_favorites TEXT NOT NULL DEFAULT '[]'")
-    conn.execute(
-        "INSERT OR IGNORE INTO profile (id, name, bio, avatar, pinned_favorites) VALUES (1, 'Movie Lover', '', '🎬', '[]')"
-    )
-    conn.commit()
-
-def row_to_dict(row):
-    return {
-        "id": row["id"],
-        "title": row["title"],
-        "genre": row["genre"],
-        "status": row["status"],
-        "rating": row["rating"],
-        "poster_url": row["poster_url"] if "poster_url" in row.keys() else "",
-        "review": row["review"] if "review" in row.keys() else "",
-        "favorite_rank": row["favorite_rank"] if "favorite_rank" in row.keys() else None,
-        "favorite_note": row["favorite_note"] if "favorite_note" in row.keys() else "",
-        "tmdb_id": row["tmdb_id"] if "tmdb_id" in row.keys() else None,
-        "media_type": row["media_type"] if "media_type" in row.keys() else None,
-        "watched_at": row["watched_at"] if "watched_at" in row.keys() else None,
-        "is_rewatch": bool(row["is_rewatch"]) if "is_rewatch" in row.keys() else False,
-        "liked": bool(row["liked"]) if "liked" in row.keys() else False,
-        "created_at": row["created_at"],
-    }
-
-
-def normalize_pinned_favorites(value):
-    if value in (None, ""):
-        return []
-    if isinstance(value, str):
-        try:
-            parsed = json.loads(value)
-        except json.JSONDecodeError:
-            return []
-    else:
-        parsed = value
-
-    if not isinstance(parsed, list):
-        return []
-
-    cleaned = []
-    for item in parsed:
-        try:
-            cleaned_value = int(item)
-        except (TypeError, ValueError):
-            continue
-        if cleaned_value not in cleaned:
-            cleaned.append(cleaned_value)
-    return cleaned
-
-def validate_payload(data, partial=False):
-    cleaned = {}
-
-    if "title" in data or not partial:
-        title = (data.get("title") or "").strip()
-        if not title:
-            return None, "Title is required."
-        cleaned["title"] = title
-
-    if "genre" in data or not partial:
-        cleaned["genre"] = (data.get("genre") or "").strip()
-
-    if "status" in data or not partial:
-        status = (data.get("status") or "plan to watch").strip().lower()
-        if status not in VALID_STATUSES:
-            return None, f"Status must be one of: {', '.join(sorted(VALID_STATUSES))}."
-        cleaned["status"] = status
-
-        if status == "completed" and "watched_at" not in data:
-            cleaned["watched_at"] = datetime.now().strftime("%Y-%m-%d")
-
-    if "rating" in data or not partial:
-        try:
-            rating = int(data.get("rating", 0))
-        except (TypeError, ValueError):
-            return None, "Rating must be a whole number between 0 and 5."
-        if rating < 0 or rating > 5:
-            return None, "Rating must be between 0 and 5."
-        cleaned["rating"] = rating
-
-    if "poster_url" in data:
-        cleaned["poster_url"] = (data.get("poster_url") or "").strip()
-    elif not partial:
-        cleaned["poster_url"] = ""
-
-    if "review" in data:
-        cleaned["review"] = (data.get("review") or "").strip()
-    elif not partial:
-        cleaned["review"] = ""
-
-    if "favorite_rank" in data:
-        raw = data.get("favorite_rank")
-        if raw in (None, "", 0):
-            cleaned["favorite_rank"] = None
-        else:
-            try:
-                rank = int(raw)
-            except (TypeError, ValueError):
-                return None, "favorite_rank must be a whole number between 1 and 5."
-            if rank < 1 or rank > 5:
-                return None, "favorite_rank must be between 1 and 5."
-            cleaned["favorite_rank"] = rank
-
-    if "favorite_note" in data:
-        cleaned["favorite_note"] = (data.get("favorite_note") or "").strip()[:120]
-
-    if "tmdb_id" in data:
-        raw_id = data.get("tmdb_id")
-        cleaned["tmdb_id"] = int(raw_id) if raw_id not in (None, "") else None
-
-    if "media_type" in data:
-        mt = (data.get("media_type") or "").strip().lower()
-        cleaned["media_type"] = mt if mt in ("movie", "tv") else None
-
-    if "watched_at" in data:
-        raw_date = (data.get("watched_at") or "").strip()
-        if not raw_date:
-            cleaned["watched_at"] = None
-        else:
-            try:
-                datetime.strptime(raw_date, "%Y-%m-%d")
-            except ValueError:
-                return None, "watched_at must be a date in YYYY-MM-DD format."
-            cleaned["watched_at"] = raw_date
-
-    if "is_rewatch" in data:
-        cleaned["is_rewatch"] = 1 if data.get("is_rewatch") else 0
-
-    if "liked" in data:
-        cleaned["liked"] = 1 if data.get("liked") else 0
-
-    return cleaned, None
-
-
-@app.route("/api/health", methods=["GET"])
-def health():
-    return jsonify({"status": "ok"})
-
-
-@app.route("/api/items", methods=["GET"])
-def list_items():
-    db = get_db()
-    status_filter = request.args.get("status")
-    if status_filter and status_filter.lower() != "all":
-        rows = db.execute(
-            "SELECT * FROM items WHERE status = ? ORDER BY created_at DESC, id DESC",
-            (status_filter.lower(),),
-        ).fetchall()
-    else:
-        rows = db.execute(
-            "SELECT * FROM items ORDER BY created_at DESC, id DESC"
-        ).fetchall()
-    return jsonify([row_to_dict(r) for r in rows])
-
-
-@app.route("/api/items", methods=["POST"])
-def create_item():
-    data = request.get_json(silent=True) or {}
-    cleaned, error = validate_payload(data, partial=False)
-    if error:
-        return jsonify({"error": error}), 400
-
-    db = get_db()
-    cursor = db.execute(
-        "INSERT INTO items (title, genre, status, rating, poster_url, review, favorite_rank, favorite_note, tmdb_id, media_type, watched_at, is_rewatch, liked) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (
-            cleaned["title"],
-            cleaned["genre"],
-            cleaned["status"],
-            cleaned["rating"],
-            cleaned["poster_url"],
-            cleaned["review"],
-            cleaned.get("favorite_rank"),
-            cleaned.get("favorite_note", ""),
-            cleaned.get("tmdb_id"),
-            cleaned.get("media_type"),
-            cleaned.get("watched_at"),
-            cleaned.get("is_rewatch", 0),
-            cleaned.get("liked", 0),
-        ),
-    )
-    db.commit()
-    new_row = db.execute("SELECT * FROM items WHERE id = ?", (cursor.lastrowid,)).fetchone()
-    return jsonify(row_to_dict(new_row)), 201
-
-
-@app.route("/api/items/<int:item_id>", methods=["PUT", "PATCH"])
-def update_item(item_id):
-    db = get_db()
-    existing = db.execute("SELECT * FROM items WHERE id = ?", (item_id,)).fetchone()
-    if existing is None:
-        return jsonify({"error": "Item not found."}), 404
-
-    data = request.get_json(silent=True) or {}
-    cleaned, error = validate_payload(data, partial=True)
-    if error:
-        return jsonify({"error": error}), 400
-
-    merged = row_to_dict(existing)
-    merged.update(cleaned)
-
-   # If this item is being assigned a rank (1-5), that rank can only belong
-    # to one item of the same media type at a time — a movie and a TV show
-    # can both hold rank #1 simultaneously, but two movies can't.
-    if "favorite_rank" in cleaned and cleaned["favorite_rank"] is not None:
-        is_tv = merged.get("media_type") == "tv"
-        if is_tv:
-            db.execute(
-                "UPDATE items SET favorite_rank = NULL WHERE favorite_rank = ? AND id != ? AND media_type = 'tv'",
-                (cleaned["favorite_rank"], item_id),
-            )
-        else:
-            db.execute(
-                "UPDATE items SET favorite_rank = NULL WHERE favorite_rank = ? AND id != ? AND (media_type IS NULL OR media_type != 'tv')",
-                (cleaned["favorite_rank"], item_id),
-            )
-
-    db.execute(
-        """UPDATE items SET
-            title = ?, genre = ?, status = ?, rating = ?, poster_url = ?,
-            review = ?, favorite_rank = ?, favorite_note = ?, tmdb_id = ?,
-            media_type = ?, watched_at = ?, is_rewatch = ?, liked = ?
-        WHERE id = ?""",
-        (
-            merged["title"],
-            merged["genre"],
-            merged["status"],
-            merged["rating"],
-            merged["poster_url"],
-            merged["review"],
-            merged["favorite_rank"],
-            merged["favorite_note"],
-            merged["tmdb_id"],
-            merged["media_type"],
-            merged["watched_at"],
-            1 if merged["is_rewatch"] else 0,
-            1 if merged["liked"] else 0,
-            item_id,
-        ),
-    )
-    db.commit()
-    updated_row = db.execute("SELECT * FROM items WHERE id = ?", (item_id,)).fetchone()
-    return jsonify(row_to_dict(updated_row))
-
-
-@app.route("/api/items/<int:item_id>", methods=["DELETE"])
-def delete_item(item_id):
-    db = get_db()
-    existing = db.execute("SELECT * FROM items WHERE id = ?", (item_id,)).fetchone()
-    if existing is None:
-        return jsonify({"error": "Item not found."}), 404
-
-    db.execute("DELETE FROM items WHERE id = ?", (item_id,))
-    db.commit()
-    return jsonify({"deleted": item_id})
-
-
-_genre_cache = {}
-_details_cache = {}
-
-def get_genre_map():
-    if _genre_cache:
-        return _genre_cache
-    if not TMDB_API_KEY:
-        return {}
-    try:
-        for kind in ("movie", "tv"):
-            resp = requests.get(
-                f"{TMDB_BASE}/genre/{kind}/list",
-                params={"api_key": TMDB_API_KEY},
-                timeout=5,
-            )
-            resp.raise_for_status()
-            for genre in resp.json().get("genres", []):
-                _genre_cache[genre["id"]] = genre["name"]
-    except requests.RequestException:
-        pass
-    return _genre_cache
-
-
-@app.route("/api/search-titles", methods=["GET"])
-def search_titles():
-    query = (request.args.get("q") or "").strip()
-    if not query:
-        return jsonify([])
-
-    if not TMDB_API_KEY:
-        return jsonify({"error": "TMDB_API_KEY is not set on the server."}), 500
-
-    try:
-        resp = requests.get(
-            f"{TMDB_BASE}/search/multi",
-            params={"api_key": TMDB_API_KEY, "query": query, "include_adult": "false"},
-            timeout=5,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-    except requests.RequestException:
-        return jsonify({"error": "Could not reach the movie database."}), 502
-
-    genre_map = get_genre_map()
-    results = []
-    for item in data.get("results", [])[:8]:
-        media_type = item.get("media_type")
-        if media_type not in ("movie", "tv"):
-            continue
-
-        title = item.get("title") or item.get("name") or ""
-        if not title:
-            continue
-
-        date = item.get("release_date") or item.get("first_air_date") or ""
-        year = date[:4] if date else None
-
-        genre_ids = item.get("genre_ids", [])
-        genre_names = [genre_map[gid] for gid in genre_ids if gid in genre_map]
-        is_animation = "Animation" in genre_names
-        is_japanese = item.get("original_language") == "ja"
-
-        if media_type == "tv" and is_animation and is_japanese:
-            kind_label = "Anime"
-        elif media_type == "tv":
-            kind_label = "TV Series"
-        else:
-            kind_label = "Movie"
-
-        poster_path = item.get("poster_path")
-
-        results.append(
-            {
-                "tmdb_id": item.get("id"),
-                "media_type": media_type,
-                "title": title,
-                "year": year,
-                "kind": kind_label,
-                "genre": ", ".join(genre_names[:2]),
-                "poster_url": f"{TMDB_IMAGE_BASE}{poster_path}" if poster_path else "",
-            }
-        )
-
-    return jsonify(results)
-
-@app.route("/api/discover", methods=["GET"])
-def discover():
-    section = (request.args.get("section") or "trending").strip().lower()
-    if section not in ("recommendations", "trending", "upcoming"):
-        return jsonify({"error": "Unknown discovery section."}), 400
-
-    if not TMDB_API_KEY:
-        return jsonify({"error": "TMDB_API_KEY is not set on the server."}), 500
-
-    media_filter = (request.args.get("media_type") or "all").strip().lower()
-    if media_filter not in ("all", "movie", "tv"):
-        media_filter = "all"
-
-    try:
-        frontend_page = int(request.args.get("page", 1))
-        if frontend_page < 1:
-            frontend_page = 1
-    except (TypeError, ValueError):
-        frontend_page = 1
-
-    tmdb_page = math.ceil(frontend_page / 2)
-    is_second_half = (frontend_page % 2 == 0)
-
-    window = (request.args.get("window") or "week").strip().lower()
-    if window not in ("day", "week"):
-        window = "week"
-
-    genre_map = get_genre_map()
-
-    def fetch_kind(kind):
-        endpoint = {
-            "recommendations": f"/discover/{kind}",
-            "trending": f"/trending/{kind}/{window}",
-            "upcoming": "/movie/upcoming" if kind == "movie" else "/tv/on_the_air",
-        }[section]
-        params = {"api_key": TMDB_API_KEY, "language": "en-US", "page": tmdb_page}
-        try:
-            resp = requests.get(f"{TMDB_BASE}{endpoint}", params=params, timeout=5)
-            resp.raise_for_status()
-            return resp.json().get("results", [])
-        except requests.RequestException:
-            return []
-
-    if media_filter == "all":
-        movie_results = fetch_kind("movie")
-        tv_results = fetch_kind("tv")
-        # Interleave movie/tv instead of dumping all movies first, all tv second
-        tagged = []
-        for i in range(max(len(movie_results), len(tv_results))):
-            if i < len(movie_results):
-                tagged.append((movie_results[i], "movie"))
-            if i < len(tv_results):
-                tagged.append((tv_results[i], "tv"))
-        raw_results = tagged
-    else:
-        raw_results = [(r, media_filter) for r in fetch_kind(media_filter)]
-
-    start_idx = 10 if is_second_half else 0
-    sliced = raw_results[start_idx : start_idx + 10]
-
-    results = []
-    for item, kind in sliced:
-        release_date = item.get("release_date") or item.get("first_air_date") or ""
-        genre_ids = item.get("genre_ids", [])
-        genre_names = [genre_map[g] for g in genre_ids if g in genre_map]
-        results.append({
-            "tmdb_id": item.get("id"),
-            "media_type": kind,
-            "title": item.get("title") or item.get("name") or "Untitled",
-            "year": release_date[:4] if release_date else None,
-            "poster_url": f"{TMDB_IMAGE_BASE}{item['poster_path']}" if item.get("poster_path") else "",
-            "vote_average": item.get("vote_average", 0),
-            "genre": ", ".join(genre_names),
-        })
-
-    return jsonify(results)
-
-@app.route("/api/title-details/<int:tmdb_id>", methods=["GET"])
-def title_details(tmdb_id):
-    media_type = (request.args.get("media_type") or "movie").strip().lower()
-    if media_type not in ("movie", "tv"):
-        media_type = "movie"
-
-    cache_key = f"{media_type}:{tmdb_id}"
-    if cache_key in _details_cache:
-        return jsonify(_details_cache[cache_key])
-
-    if not TMDB_API_KEY:
-        return jsonify({"error": "TMDB_API_KEY is not set on the server."}), 500
-
-    try:
-        resp = requests.get(
-            f"{TMDB_BASE}/{media_type}/{tmdb_id}",
-            params={"api_key": TMDB_API_KEY, "append_to_response": "credits"},
-            timeout=5,
-        )
-        if resp.status_code == 404:
-            return jsonify({"error": "Title not found."}), 404
-        resp.raise_for_status()
-        data = resp.json()
-    except requests.RequestException:
-        return jsonify({"error": "Could not reach the movie database."}), 502
-
-    title = data.get("title") or data.get("name") or ""
-    date = data.get("release_date") or data.get("first_air_date") or ""
-    year = date[:4] if date else None
-    genres = [g["name"] for g in data.get("genres", [])]
-    poster_path = data.get("poster_path")
-
-    credits = data.get("credits", {})
-
-    def person_photo(person):
-        path = person.get("profile_path")
-        return f"{TMDB_IMAGE_BASE}{path}" if path else None
-
-    cast = [
-        {"name": c["name"], "photo": person_photo(c)}
-        for c in credits.get("cast", [])[:6]
-    ]
-
-    if media_type == "movie":
-        directors = [
-            {"name": c["name"], "photo": person_photo(c)}
-            for c in credits.get("crew", [])
-            if c.get("job") == "Director"
-        ]
-    else:
-        directors = [
-            {"name": c.get("name"), "photo": person_photo(c)}
-            for c in data.get("created_by", [])
-        ]
-
-    result = {
-        "title": title,
-        "year": year,
-        "genres": genres,
-        "overview": data.get("overview") or "",
-        "poster_url": f"{TMDB_IMAGE_BASE}{poster_path}" if poster_path else "",
-        "directors": directors,
-        "cast": cast,
-        "runtime": data.get("runtime"),
-        "episode_count": data.get("number_of_episodes"),
-        "studios": [
-            company.get("name")
-            for company in data.get("production_companies", [])
-            if company.get("name")
-        ],
-        "vote_average": data.get("vote_average"),
-    }
-    _details_cache[cache_key] = result
-    return jsonify(result)
-
-def episode_log_to_dict(row):
-    return {
-        "id": row["id"],
-        "item_id": row["item_id"],
-        "season_number": row["season_number"],
-        "episode_number": row["episode_number"],
-        "rating": row["rating"],
-        "review": row["review"],
-        "liked": bool(row["liked"]),
-        "watched_at": row["watched_at"],
-        "created_at": row["created_at"],
-    }
-
-
-@app.route("/api/tv/<int:tmdb_id>/seasons", methods=["GET"])
-def tv_seasons(tmdb_id):
-    if not TMDB_API_KEY:
-        return jsonify({"error": "TMDB_API_KEY is not set on the server."}), 500
-    try:
-        resp = requests.get(
-            f"{TMDB_BASE}/tv/{tmdb_id}",
-            params={"api_key": TMDB_API_KEY},
-            timeout=5,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-    except requests.RequestException:
-        return jsonify({"error": "Could not reach the movie database."}), 502
-
-    seasons = [
-        {
-            "season_number": s["season_number"],
-            "name": s.get("name") or f"Season {s['season_number']}",
-            "episode_count": s.get("episode_count", 0),
-            "poster_url": f"{TMDB_IMAGE_BASE}{s['poster_path']}" if s.get("poster_path") else "",
-        }
-        for s in data.get("seasons", [])
-        if s.get("season_number", 0) > 0  # skip "Specials"
-    ]
-    return jsonify({"seasons": seasons})
-
-
-@app.route("/api/tv/<int:tmdb_id>/season/<int:season_number>", methods=["GET"])
-def tv_season_episodes(tmdb_id, season_number):
-    if not TMDB_API_KEY:
-        return jsonify({"error": "TMDB_API_KEY is not set on the server."}), 500
-    try:
-        resp = requests.get(
-            f"{TMDB_BASE}/tv/{tmdb_id}/season/{season_number}",
-            params={"api_key": TMDB_API_KEY},
-            timeout=5,
-        )
-        if resp.status_code == 404:
-            return jsonify({"error": "Season not found."}), 404
-        resp.raise_for_status()
-        data = resp.json()
-    except requests.RequestException:
-        return jsonify({"error": "Could not reach the movie database."}), 502
-
-    episodes = [
-        {
-            "episode_number": e["episode_number"],
-            "name": e.get("name") or f"Episode {e['episode_number']}",
-            "air_date": e.get("air_date"),
-            "overview": e.get("overview") or "",
-        }
-        for e in data.get("episodes", [])
-    ]
-    return jsonify({"season_number": season_number, "episodes": episodes})
-
-
-@app.route("/api/items/<int:item_id>/episodes", methods=["GET"])
-def list_episode_logs(item_id):
-    db = get_db()
-    rows = db.execute(
-        "SELECT * FROM episode_logs WHERE item_id = ? ORDER BY season_number, episode_number",
-        (item_id,),
-    ).fetchall()
-    return jsonify([episode_log_to_dict(r) for r in rows])
-
-
-@app.route("/api/items/<int:item_id>/episodes/<int:season_number>/<int:episode_number>", methods=["PUT"])
-def upsert_episode_log(item_id, season_number, episode_number):
-    data = request.get_json(silent=True) or {}
-
-    try:
-        rating = int(data.get("rating", 0))
-    except (TypeError, ValueError):
-        return jsonify({"error": "Rating must be a whole number between 0 and 5."}), 400
-    if rating < 0 or rating > 5:
-        return jsonify({"error": "Rating must be between 0 and 5."}), 400
-
-    review = (data.get("review") or "").strip()
-    liked = 1 if data.get("liked") else 0
-
-    raw_date = (data.get("watched_at") or "").strip()
-    if raw_date:
-        try:
-            datetime.strptime(raw_date, "%Y-%m-%d")
-        except ValueError:
-            return jsonify({"error": "watched_at must be a date in YYYY-MM-DD format."}), 400
-        watched_at = raw_date
-    else:
-        watched_at = datetime.now().strftime("%Y-%m-%d")
-
-    db = get_db()
-    existing = db.execute("SELECT id FROM items WHERE id = ?", (item_id,)).fetchone()
-    if existing is None:
-        return jsonify({"error": "Item not found."}), 404
-
-    db.execute(
-        """
-        INSERT INTO episode_logs (item_id, season_number, episode_number, rating, review, liked, watched_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(item_id, season_number, episode_number)
-        DO UPDATE SET rating = excluded.rating, review = excluded.review,
-                      liked = excluded.liked, watched_at = excluded.watched_at
-        """,
-        (item_id, season_number, episode_number, rating, review, liked, watched_at),
-    )
-    db.commit()
-    row = db.execute(
-        "SELECT * FROM episode_logs WHERE item_id = ? AND season_number = ? AND episode_number = ?",
-        (item_id, season_number, episode_number),
-    ).fetchone()
-    return jsonify(episode_log_to_dict(row))
-
-
-@app.route("/api/items/<int:item_id>/episodes/<int:season_number>/<int:episode_number>", methods=["DELETE"])
-def delete_episode_log(item_id, season_number, episode_number):
-    db = get_db()
-    db.execute(
-        "DELETE FROM episode_logs WHERE item_id = ? AND season_number = ? AND episode_number = ?",
-        (item_id, season_number, episode_number),
-    )
-    db.commit()
-    return jsonify({"deleted": True})
-
-@app.route("/api/episode-reviews", methods=["GET"])
-def list_episode_reviews():
-    db = get_db()
-    rows = db.execute(
-        """
-        SELECT e.*, i.title, i.poster_url, i.genre
-        FROM episode_logs e
-        JOIN items i ON i.id = e.item_id
-        WHERE e.review != '' OR e.rating > 0
-        ORDER BY COALESCE(e.watched_at, e.created_at) DESC
-        """
-    ).fetchall()
-    return jsonify(
-        [
-            {
-                **episode_log_to_dict(r),
-                "title": r["title"],
-                "poster_url": r["poster_url"],
-                "genre": r["genre"],
-            }
-            for r in rows
-        ]
-    )
-
-@app.route("/api/profile", methods=["GET"])
-def get_profile():
-    db = get_db()
-    row = db.execute("SELECT * FROM profile WHERE id = 1").fetchone()
-    return jsonify({
-        "name": row["name"],
-        "bio": row["bio"],
-        "avatar": row["avatar"],
-        "pinned_favorites": normalize_pinned_favorites(row["pinned_favorites"]),
-    })
-
-
-@app.route("/api/profile", methods=["PATCH"])
-def update_profile():
-    data = request.get_json(silent=True) or {}
-    db = get_db()
-    row = db.execute("SELECT * FROM profile WHERE id = 1").fetchone()
-
-    name = (data.get("name") if "name" in data else row["name"]) or "Movie Lover"
-    bio = (data.get("bio") if "bio" in data else row["bio"]) or ""
-    avatar = (data.get("avatar") if "avatar" in data else row["avatar"]) or "🎬"
-    pinned_favorites = normalize_pinned_favorites(
-        data.get("pinned_favorites") if "pinned_favorites" in data else row["pinned_favorites"]
-    )
-
-    payload = {
-        "name": name.strip()[:60],
-        "bio": bio.strip()[:200],
-        "avatar": avatar.strip()[:3_000_000],
-        "pinned_favorites": pinned_favorites,
-    }
-
-    db.execute(
-        "UPDATE profile SET name = ?, bio = ?, avatar = ?, pinned_favorites = ? WHERE id = 1",
-        (payload["name"], payload["bio"], payload["avatar"], json.dumps(payload["pinned_favorites"])),
-    )
-    db.commit()
-    return jsonify(payload)
-
-
-@app.route("/api/profile/talent", methods=["GET"])
-def profile_talent():
-    if not TMDB_API_KEY:
-        return jsonify({"directors": [], "actors": []})
-
-    db = get_db()
-    rows = db.execute(
-        "SELECT id, title, tmdb_id, media_type FROM items WHERE tmdb_id IS NOT NULL ORDER BY created_at DESC"
-    ).fetchall()
-
-    if not rows:
-        return jsonify({"directors": [], "actors": []})
-
-    director_map = {}
-    actor_map = {}
-
-    for r in rows:
-        media_type = r["media_type"] or "movie"
-        try:
-            resp = requests.get(
-                f"{TMDB_BASE}/{media_type}/{r['tmdb_id']}",
-                params={"api_key": TMDB_API_KEY, "append_to_response": "credits"},
-                timeout=5,
-            )
-            if resp.status_code != 200:
-                continue
-            data = resp.json()
-        except requests.RequestException:
-            continue
-
-        title = data.get("title") or data.get("name") or r["title"]
-        credits = data.get("credits", {})
-
-        for person in credits.get("crew", []) or []:
-            if person.get("job") != "Director" or not person.get("name"):
-                continue
-            name = person["name"]
-            entry = director_map.setdefault(name, {"name": name, "photo": None, "count": 0, "titles": []})
-            entry["count"] += 1
-            entry["titles"] = list(dict.fromkeys(entry["titles"] + [title]))
-            if not entry["photo"] and person.get("profile_path"):
-                entry["photo"] = f"{TMDB_IMAGE_BASE}{person['profile_path']}"
-
-        for person in credits.get("cast", []) or []:
-            if not person.get("name"):
-                continue
-            name = person["name"]
-            entry = actor_map.setdefault(name, {"name": name, "photo": None, "count": 0, "titles": []})
-            entry["count"] += 1
-            entry["titles"] = list(dict.fromkeys(entry["titles"] + [title]))
-            if not entry["photo"] and person.get("profile_path"):
-                entry["photo"] = f"{TMDB_IMAGE_BASE}{person['profile_path']}"
-
-    def to_response(mapping):
-        values = []
-        for value in mapping.values():
-            if value["count"] < 2:
-                continue
-            values.append({
-                "name": value["name"],
-                "photo": value["photo"],
-                "count": value["count"],
-                "titles": value["titles"],
-            })
-        values.sort(key=lambda item: (-item["count"], item["name"].lower()))
-        return values[:5]
-
-    return jsonify({"directors": to_response(director_map), "actors": to_response(actor_map)})
-
-
-
-if __name__ == "__main__":
-    init_db()
-    app.run(debug=True, host="0.0.0.0", port=5000)
-</file>
-
-<file path="frontend/src/App.jsx">
-import { useEffect, useMemo, useState } from "react";
-import { api } from "./api.js";
-import FilterTabs from "./components/FilterTabs.jsx";
-import AddItemForm from "./components/AddItemForm.jsx";
-import WatchlistItem from "./components/WatchlistItem.jsx";
-import TopFive from "./components/Topfive.jsx";
-import TitleDetailModal from "./components/TitleDetailModal.jsx";
-import PosterGrid from "./components/PosterGrid.jsx";
-import ReviewsPage from "./components/ReviewsPage.jsx";
-import StatsPage from "./components/StatsPage.jsx";
-import ProfilePage from "./components/ProfilePage.jsx";
-import DiscoverPage from "./components/DiscoverPage.jsx";
-import CollectionsPage from "./components/CollectionsPage.jsx";
-import DiaryPage from "./components/DiaryPage.jsx";
-import GenreDropdown from "./components/GenreDropdown.jsx";
-
-export default function App() {
-  const [items, setItems] = useState([]);
-  const [filter, setFilter] = useState("all");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [detailItem, setDetailItem] = useState(null);
-  const [page, setPage] = useState("watchlist");
-  const [showBackToTop, setShowBackToTop] = useState(false);
-  const [showMenu, setShowMenu] = useState(false);
-  const [listQuery, setListQuery] = useState("");
-  const [listGenre, setListGenre] = useState("all");
-
-  // Wraps a state update in the browser's View Transitions API when
-  // available, so switching tabs/filters crossfades smoothly instead of
-  // the page snapping instantly to its new height/content.
-  function smoothly(update) {
-    if (document.startViewTransition) {
-      document.startViewTransition(update);
-    } else {
-      update();
-    }
-  }
-
-  function changeFilter(next) {
-    smoothly(() => setFilter(next));
-  }
-
-  function changePage(next) {
-    smoothly(() => setPage(next));
-    setShowMenu(false);
-  }
-
-  function scrollToSection(id) {
-    document.getElementById(id)?.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
-    });
-    setShowMenu(false);
-  }
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    api
-      .list()
-      .then((data) => {
-        if (!cancelled) setItems(data);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err.message);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    function updateScrollState() {
-      setShowBackToTop(window.scrollY > 520);
-    }
-
-    updateScrollState();
-    window.addEventListener("scroll", updateScrollState, { passive: true });
-    return () => window.removeEventListener("scroll", updateScrollState);
-  }, []);
-
-  const counts = useMemo(() => {
-    const c = {
-      all: items.length,
-      watching: 0,
-      "plan to watch": 0,
-      completed: 0,
-    };
-    for (const item of items) c[item.status] = (c[item.status] || 0) + 1;
-    return c;
-  }, [items]);
-
-  const visibleItems = useMemo(() => {
-    if (filter === "all") return items;
-    return items.filter((item) => item.status === filter);
-  }, [items, filter]);
-
-  const listGenres = useMemo(() => {
-    const genres = new Set();
-    items.forEach((item) =>
-      (item.genre || "")
-        .split(",")
-        .map((genre) => genre.trim())
-        .filter(Boolean)
-        .forEach((genre) => genres.add(genre)),
-    );
-    return [...genres].sort((a, b) => a.localeCompare(b));
-  }, [items]);
-
-  const searchedItems = useMemo(() => {
-    const query = listQuery.trim().toLowerCase();
-    return visibleItems.filter((item) => {
-      const matchesQuery =
-        !query ||
-        item.title.toLowerCase().includes(query) ||
-        (item.genre || "").toLowerCase().includes(query);
-      const matchesGenre =
-        listGenre === "all" ||
-        (item.genre || "")
-          .split(",")
-          .map((genre) => genre.trim().toLowerCase())
-          .includes(listGenre.toLowerCase());
-      return matchesQuery && matchesGenre;
-    });
-  }, [listGenre, listQuery, visibleItems]);
-
-  async function handleAdd(form) {
-    const normalizedTitle = form.title.trim().toLowerCase();
-    const isDuplicate = items.some((it) => {
-      if (
-        form.tmdb_id &&
-        it.tmdb_id &&
-        it.tmdb_id === form.tmdb_id &&
-        it.media_type === form.media_type
-      ) {
-        return true;
-      }
-      return it.title.trim().toLowerCase() === normalizedTitle;
-    });
-    if (isDuplicate) {
-      throw new Error(`"${form.title.trim()}" is already on your list.`);
-    }
-    const created = await api.create(form);
-    setItems((prev) => [created, ...prev]);
-  }
-  async function handleUpdate(id, changes) {
-    const previous = items;
-    setItems((prev) =>
-      prev.map((it) => (it.id === id ? { ...it, ...changes } : it)),
-    );
-    try {
-      await api.update(id, changes);
-      if ("favorite_rank" in changes) {
-        const fresh = await api.list();
-        setItems(fresh);
-      }
-    } catch (err) {
-      setItems(previous);
-      setError(err.message);
-    }
-  }
-
-  async function handleDelete(id) {
-    const previous = items;
-    setItems((prev) => prev.filter((it) => it.id !== id));
-    try {
-      await api.remove(id);
-    } catch (err) {
-      setItems(previous);
-      setError(err.message);
-    }
-  }
-
-  return (
-    <div className="page">
-      <header className="masthead">
-        <div className="masthead__title-group">
-          <h1>Watchlist</h1>
-          <p>Everything you're watching, want to watch, or already loved.</p>
-        </div>
-      </header>
-
-      <nav className="page-nav" aria-label="Main navigation">
-        <div className="page-nav__links">
-          {[
-            { key: "watchlist", label: "Watchlist" },
-            { key: "discover", label: "Discover" },
-            { key: "collections", label: "Collections" },
-            { key: "diary", label: "Diary" },
-            { key: "reviews", label: "Reviews" },
-            { key: "stats", label: "Stats" },
-            { key: "profile", label: "Profile" },
-          ].map((p) => (
-            <button
-              key={p.key}
-              className={`page-nav__btn ${page === p.key ? "page-nav__btn--active" : ""}`}
-              onClick={() => changePage(p.key)}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="page-nav__menu-wrap">
-          <button
-            className="page-nav__menu-btn"
-            onClick={() => setShowMenu((open) => !open)}
-            aria-label="Open more navigation"
-            aria-expanded={showMenu}
-            aria-haspopup="menu"
-          >
-            <span aria-hidden="true">☰</span>
-          </button>
-          {showMenu && (
-            <div className="page-nav__menu" role="menu">
-              <button
-                role="menuitem"
-                onClick={() => scrollToSection("top-five")}
-              >
-                Top 5 favorites
-              </button>
-              <button
-                role="menuitem"
-                onClick={() => scrollToSection("add-movie")}
-              >
-                Add a movie
-              </button>
-              <button
-                role="menuitem"
-                onClick={() => {
-                  window.scrollTo({ top: 0, behavior: "smooth" });
-                  setShowMenu(false);
-                }}
-              >
-                Back to top
-              </button>
-            </div>
-          )}
-        </div>
-      </nav>
-
-      <main className="content">
-        {error && (
-          <p className="banner banner--error">
-            {error} — make sure the backend is running on port 5000.
-          </p>
-        )}
-
-        {page === "watchlist" && (
-          <>
-            <div id="top-five">
-              <TopFive
-                items={items}
-                mediaType="movie"
-                title="5 Favorite Films"
-                onOpenDetails={setDetailItem}
-              />
-            </div>
-
-            <div id="top-five-tv">
-              <TopFive
-                items={items}
-                mediaType="tv"
-                title="5 Favorite TV Shows"
-                onOpenDetails={setDetailItem}
-              />
-            </div>
-
-            <div id="add-movie">
-              <AddItemForm onAdd={handleAdd} />
-            </div>
-
-            <FilterTabs
-              active={filter}
-              onChange={changeFilter}
-              counts={counts}
-            />
-
-            <div className="list-toolbar">
-              <label className="list-toolbar__search">
-                <span className="sr-only">Search your watchlist</span>
-                <span aria-hidden="true">⌕</span>
-                <input
-                  type="search"
-                  placeholder="Search titles or genres"
-                  value={listQuery}
-                  onChange={(e) => setListQuery(e.target.value)}
-                />
-              </label>
-              <GenreDropdown
-                value={listGenre}
-                onChange={setListGenre}
-                genres={listGenres}
-              />
-            </div>
-
-            {loading ? (
-              <p className="empty-state">Loading your shelf…</p>
-            ) : searchedItems.length === 0 ? (
-              <div className="empty-state">
-                <p>
-                  {visibleItems.length === 0
-                    ? filter === "all"
-                      ? "Nothing on the shelf yet. Add the first title."
-                      : `Nothing in "${filter}" yet.`
-                    : "No titles match those filters."}
-                </p>
-              </div>
-            ) : filter === "all" ? (
-              <ul className="ticket-list">
-                {searchedItems.map((item) => (
-                  <WatchlistItem
-                    key={item.id}
-                    item={item}
-                    onUpdate={handleUpdate}
-                    onDelete={handleDelete}
-                    onOpenDetails={setDetailItem}
-                  />
-                ))}
-              </ul>
-            ) : (
-              <PosterGrid items={searchedItems} onOpenDetails={setDetailItem} />
-            )}
-          </>
-        )}
-
-        {page === "reviews" && (
-          <ReviewsPage
-            items={items}
-            onOpenDetails={setDetailItem}
-            onUpdate={handleUpdate}
-            onDelete={handleDelete}
-          />
-        )}
-
-        {page === "discover" && (
-          <DiscoverPage items={items} onAdd={handleAdd} />
-        )}
-
-        {page === "collections" && <CollectionsPage items={items} />}
-
-        {page === "diary" && (
-          <DiaryPage items={items} onOpenDetails={setDetailItem} />
-        )}
-
-        {page === "stats" && (
-          <StatsPage items={items} onOpenDetails={setDetailItem} />
-        )}
-
-        {page === "profile" && (
-          <ProfilePage items={items} onOpenDetails={setDetailItem} />
-        )}
-      </main>
-
-      {detailItem && (
-        <TitleDetailModal
-          item={detailItem}
-          onClose={() => setDetailItem(null)}
-          onBackfill={(id, tmdb_id, media_type) =>
-            handleUpdate(id, { tmdb_id, media_type })
-          }
-        />
-      )}
-
-      {showBackToTop && (
-        <button
-          className="back-to-top"
-          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-          aria-label="Back to top"
-          title="Back to top"
-        >
-          <span aria-hidden="true">↑</span>
-          <span>Top</span>
-        </button>
-      )}
-    </div>
-  );
+/* ---------- Playlist edit form ---------- */
+
+.collection-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.collection-edit input,
+.collection-edit textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.55rem 0.7rem;
+  background: #1c1338;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+  resize: vertical;
+}
+
+.collection-edit input:focus,
+.collection-edit textarea:focus {
+  outline: 0;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(192, 132, 252, 0.18);
+}
+
+.collection-edit__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+/* ---------- See more / show less ---------- */
+
+.poster-chip-more {
+  display: block;
+  margin: 0.6rem auto 0;
+  border: 0;
+  background: transparent;
+  color: var(--gold);
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  transition: background 0.15s ease;
+}
+
+.poster-chip-more:hover {
+  background: rgba(192, 132, 252, 0.14);
+}
+
+/* ---------- Collections popups ---------- */
+
+.collections-modal {
+  max-width: 560px;
+}
+
+.collections-modal__title {
+  margin: 0 2.2rem 0.25rem 0;
+  font-size: 1.3rem;
+}
+
+.collections-modal__sub {
+  margin: 0 0 0.9rem;
+  color: var(--text-soft);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.collections-modal__count {
+  margin: 0 0 0.75rem;
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.collections-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+
+/* full poster grid ("See more") */
+.view-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 0.9rem 0.7rem;
+}
+
+.view-grid__item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.view-grid__item img,
+.view-grid__empty {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--espresso);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.view-grid__item span {
+  font-size: 0.72rem;
+  line-height: 1.3;
+  color: var(--text-soft);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* add-titles list inside the popup */
+.collection-picker--modal {
+  margin-top: 0;
+}
+
+.collection-picker--modal .collection-picker__list {
+  max-height: 50vh;
+}
+
+.collection-picker--modal .collection-picker__row {
+  padding: 0.4rem 0.5rem;
+}
+
+.collection-picker__row:hover,
+.collection-picker__row--on {
+  background: rgba(192, 132, 252, 0.12);
+}
+
+/* edit form labels */
+.collection-edit__label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+}
+
+.collection-edit__label input,
+.collection-edit__label textarea {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
 }
 </file>
 

@@ -4024,8 +4024,21 @@ select {
 }
 .feature-columns {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 2rem;
+}
+
+.collections-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 720px) {
+  .collections-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .inline-create {
   display: flex;
@@ -5155,6 +5168,10 @@ select {
   color: var(--text-soft);
   font-size: 0.78rem;
   line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .inline-create--stacked {
@@ -5194,6 +5211,12 @@ select {
 .inline-create--stacked button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.new-playlist-btn {
+  display: block;
+  width: 100%;
+  text-align: center;
 }
 
 .collection-card__add-btn {

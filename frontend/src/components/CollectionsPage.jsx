@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
 const STORAGE_KEY = "watchlist-collections-v1";
-const CHALLENGE_KEY = "watchlist-challenges-v1";
 const MAX_VISIBLE = 14; // posters shown on a playlist card before "See more"
 
 function read(key, fallback) {
@@ -201,6 +200,7 @@ function EditPlaylistModal({ collection, onSave, onClose }) {
             onChange={(e) => setDescription(e.target.value)}
             placeholder="What ties this list together?"
             rows={3}
+            maxLength={160}
           />
         </label>
         <div className="collection-edit__actions">
@@ -220,23 +220,66 @@ function EditPlaylistModal({ collection, onSave, onClose }) {
   );
 }
 
+/* ---------- new playlist ---------- */
+
+function CreatePlaylistModal({ onCreate, onClose }) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+
+  function submit(event) {
+    event.preventDefault();
+    const title = name.trim();
+    const summary = description.trim();
+    if (!title || !summary) return;
+    onCreate(title, summary);
+  }
+
+  return (
+    <Modal title="New playlist" onClose={onClose}>
+      <form className="collection-edit" onSubmit={submit}>
+        <label className="collection-edit__label">
+          Name
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Mind-bending thrillers"
+            autoFocus
+          />
+        </label>
+        <label className="collection-edit__label">
+          Description
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="What ties this list together? e.g. Twisty plots that mess with your head."
+            rows={3}
+            maxLength={160}
+          />
+        </label>
+        <div className="collection-edit__actions">
+          <button type="button" className="btn btn--ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="btn btn--primary"
+            disabled={!name.trim() || !description.trim()}
+          >
+            Create list
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 /* ---------- page ---------- */
 
 export default function CollectionsPage({ items }) {
   const [collections, setCollections] = useState(() => read(STORAGE_KEY, []));
-  const [challenges, setChallenges] = useState(() => read(CHALLENGE_KEY, []));
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [challengeName, setChallengeName] = useState("");
-  const [challengeGoal, setChallengeGoal] = useState(10);
-  const [modal, setModal] = useState(null); // { type: "view" | "add" | "edit", id }
+  const [modal, setModal] = useState(null); // { type: "create" | "view" | "add" | "edit", id }
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
-  const [confirmChallengeId, setConfirmChallengeId] = useState(null);
 
-  const completed = useMemo(
-    () => items.filter((item) => item.status === "completed"),
-    [items],
-  );
   const itemsById = useMemo(
     () => new Map(items.map((item) => [item.id, item])),
     [items],
@@ -245,10 +288,6 @@ export default function CollectionsPage({ items }) {
   useEffect(
     () => localStorage.setItem(STORAGE_KEY, JSON.stringify(collections)),
     [collections],
-  );
-  useEffect(
-    () => localStorage.setItem(CHALLENGE_KEY, JSON.stringify(challenges)),
-    [challenges],
   );
 
   const openModal = (type, id) => {
@@ -260,11 +299,7 @@ export default function CollectionsPage({ items }) {
     ? collections.find((c) => c.id === modal.id)
     : null;
 
-  function createCollection(event) {
-    event.preventDefault();
-    const title = name.trim();
-    const summary = description.trim();
-    if (!title || !summary) return;
+  function createCollection(title, summary) {
     setCollections((current) => [
       ...current,
       {
@@ -274,8 +309,7 @@ export default function CollectionsPage({ items }) {
         itemIds: [],
       },
     ]);
-    setName("");
-    setDescription("");
+    closeModal();
   }
   function deleteCollection(collectionId) {
     setCollections((current) =>
@@ -306,22 +340,6 @@ export default function CollectionsPage({ items }) {
       ),
     );
   }
-  function createChallenge(event) {
-    event.preventDefault();
-    const title = challengeName.trim();
-    if (!title || Number(challengeGoal) < 1) return;
-    setChallenges((current) => [
-      ...current,
-      { id: crypto.randomUUID(), name: title, goal: Number(challengeGoal) },
-    ]);
-    setChallengeName("");
-    setChallengeGoal(10);
-  }
-  function deleteChallenge(challengeId) {
-    setChallenges((current) =>
-      current.filter((challenge) => challenge.id !== challengeId),
-    );
-  }
 
   return (
     <div className="feature-page">
@@ -344,49 +362,33 @@ export default function CollectionsPage({ items }) {
             <h2>Themed playlists</h2>
             <span>{collections.length}</span>
           </div>
-          <form
-            className="inline-create inline-create--stacked"
-            onSubmit={createCollection}
+          <button
+            type="button"
+            className="btn btn--primary new-playlist-btn"
+            onClick={() => openModal("create")}
           >
-            <input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Mind-bending thrillers"
-              aria-label="Collection name"
-            />
-            <textarea
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              placeholder="What ties this list together? e.g. Twisty plots that mess with your head."
-              aria-label="Collection description"
-              rows={2}
-            />
-            <button
-              type="submit"
-              disabled={!name.trim() || !description.trim()}
-            >
-              Create list
-            </button>
-          </form>
+            + New playlist
+          </button>
           {collections.length === 0 ? (
             <p className="empty-state">Create your first collection.</p>
           ) : (
-            collections.map((collection) => {
-              const isConfirming = confirmDeleteId === collection.id;
-              const validIds = collection.itemIds.filter((id) =>
-                itemsById.has(id),
-              );
-              const visibleIds = validIds.slice(0, MAX_VISIBLE);
-              const hiddenCount = validIds.length - MAX_VISIBLE;
-              return (
-                <article className="collection-card" key={collection.id}>
-                  <div>
-                    <h3>{collection.name}</h3>
-                    <div className="collection-card__meta-actions">
-                      <span>{collection.itemIds.length} titles</span>
-                      {isConfirming ? (
-                        <span className="confirm-delete">
-                          Delete playlist?
+            <div className="collections-grid">
+              {collections.map((collection) => {
+                const isConfirming = confirmDeleteId === collection.id;
+                const validIds = collection.itemIds.filter((id) =>
+                  itemsById.has(id),
+                );
+                const visibleIds = validIds.slice(0, MAX_VISIBLE);
+                const hiddenCount = validIds.length - MAX_VISIBLE;
+                return (
+                  <article className="collection-card" key={collection.id}>
+                    <div>
+                      <h3>{collection.name}</h3>
+                      <div className="collection-card__meta-actions">
+                        <span>{collection.itemIds.length} titles</span>
+                        {isConfirming ? (
+                          <span className="confirm-delete">
+                            Delete playlist?
                           <button
                             type="button"
                             className="btn btn--tiny btn--danger"
@@ -483,89 +485,15 @@ export default function CollectionsPage({ items }) {
                   </button>
                 </article>
               );
-            })
-          )}
-        </section>
-        <section className="feature-section">
-          <div className="feature-section__heading">
-            <h2>Watch challenges</h2>
-            <span>{completed.length} completed</span>
-          </div>
-          <form className="inline-create" onSubmit={createChallenge}>
-            <input
-              value={challengeName}
-              onChange={(event) => setChallengeName(event.target.value)}
-              placeholder="50 films in 2026"
-              aria-label="Challenge name"
-            />
-            <input
-              type="number"
-              min="1"
-              value={challengeGoal}
-              onChange={(event) => setChallengeGoal(event.target.value)}
-              aria-label="Challenge goal"
-            />
-            <button type="submit">Add goal</button>
-          </form>
-          {challenges.length === 0 ? (
-            <p className="empty-state">Set a goal and make it yours.</p>
-          ) : (
-            challenges.map((challenge) => {
-              const progress = Math.min(completed.length, challenge.goal);
-              return (
-                <article className="challenge-card" key={challenge.id}>
-                  <div>
-                    <h3>{challenge.name}</h3>
-                    <div className="challenge-card__meta-actions">
-                      <strong>
-                        {progress} / {challenge.goal}
-                      </strong>
-                      {confirmChallengeId === challenge.id ? (
-                        <span className="confirm-delete">
-                          Delete?
-                          <button
-                            type="button"
-                            className="btn btn--tiny btn--danger"
-                            onClick={() => {
-                              deleteChallenge(challenge.id);
-                              setConfirmChallengeId(null);
-                            }}
-                          >
-                            Yes
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn--tiny btn--ghost"
-                            onClick={() => setConfirmChallengeId(null)}
-                          >
-                            No
-                          </button>
-                        </span>
-                      ) : (
-                        <button
-                          type="button"
-                          className="icon-btn"
-                          aria-label={`Delete ${challenge.name}`}
-                          title="Delete challenge"
-                          onClick={() => setConfirmChallengeId(challenge.id)}
-                        >
-                          ✕
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <div className="challenge-card__track">
-                    <span
-                      style={{ width: `${(progress / challenge.goal) * 100}%` }}
-                    />
-                  </div>
-                </article>
-              );
-            })
+              })}
+            </div>
           )}
         </section>
       </div>
 
+      {modal?.type === "create" && (
+        <CreatePlaylistModal onCreate={createCollection} onClose={closeModal} />
+      )}
       {modalCollection && modal.type === "view" && (
         <ViewPlaylistModal
           collection={modalCollection}
